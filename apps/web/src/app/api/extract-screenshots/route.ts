@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { householdId } from "@/lib/server/auth";
 import { storeCoverFromBuffer } from "@/lib/server/images";
 import { clientKey, limited } from "@/lib/server/ratelimit";
-import { MAX_SCREENSHOTS, MAX_SCREENSHOT_BYTES, ScreenshotError, cropPhoto, normaliseScreenshot, readScreenshots } from "@/lib/server/screenshots";
+import { MAX_SCREENSHOTS, MAX_SCREENSHOT_BYTES, ScreenshotError, cropPhoto, describeError, normaliseScreenshot, readScreenshots } from "@/lib/server/screenshots";
 import { buildResult } from "@homehunt/importers";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const fail = (code: string, message: string, status: number) => NextResponse.json({ error: { code, message } }, { status });
+const fail = (code: string, message: string, status: number, detail?: string) => NextResponse.json({ error: { code, message, detail } }, { status });
 
 /**
  * POST multipart/form-data with `images` (1 to 6 listing screenshots).
@@ -45,9 +45,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ result, cover: stored?.cover ?? null, photoFound: !!cropped, unreadable: read.unreadable });
   } catch (e) {
     if (e instanceof ScreenshotError) {
-      const status = e.code === "no_key" ? 501 : e.code === "rate" ? 429 : e.code === "bad_key" ? 502 : 422;
-      return fail(e.code, e.message, status);
+      // Visible in Vercel's function logs, so a failure can be diagnosed.
+      console.error("[extract-screenshots]", e.code, e.detail ?? e.message);
+      const status = e.code === "no_key" ? 501 : e.code === "rate" ? 429 : ["bad_key", "model", "busy", "timeout"].includes(e.code) ? 502 : 422;
+      return fail(e.code, e.message, status, e.detail);
     }
-    return fail("unknown", "Something went wrong reading the screenshots.", 500);
+    console.error("[extract-screenshots] unexpected", describeError(e));
+    return fail("unknown", "Something went wrong reading the screenshots.", 500, describeError(e));
   }
 }

@@ -114,11 +114,22 @@ export function toDraft(r: ScreenshotRead): ScreenshotResult {
 
 export class ScreenshotError extends Error {
   constructor(
-    public code: "no_key" | "bad_key" | "rate" | "refused" | "unreadable" | "too_big" | "unknown",
+    public code: "no_key" | "bad_key" | "rate" | "refused" | "unreadable" | "too_big" | "model" | "busy" | "timeout" | "truncated" | "unknown",
     message: string,
+    /** Technical detail for the on-screen "details" line and the server log. Never contains the key. */
+    public detail?: string,
   ) {
     super(message);
   }
+}
+
+/** A short, safe description of what actually went wrong, for the log and the details line. */
+export function describeError(e: unknown): string {
+  const o = (e && typeof e === "object" ? e : {}) as { status?: unknown; name?: unknown; message?: unknown; error?: { error?: { type?: unknown; message?: unknown } } };
+  const inner = o.error?.error;
+  const type = typeof inner?.type === "string" ? inner.type : typeof o.name === "string" ? o.name : "Error";
+  const msg = (typeof inner?.message === "string" ? inner.message : typeof o.message === "string" ? o.message : "").replace(/sk-ant-[\w-]+/g, "[key]").slice(0, 300);
+  return `${typeof o.status === "number" ? o.status + " " : ""}${type}${msg ? `: ${msg}` : ""}`;
 }
 
 export interface ReadOptions {
@@ -145,20 +156,33 @@ export async function readScreenshots(images: Buffer[], opts: ReadOptions = {}):
   try {
     const res = await client.messages.parse({
       model,
-      max_tokens: 8000,
+      // Reading a picture needs little reasoning: low effort keeps it quick and leaves the token budget for the answer.
+      max_tokens: 16000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content }],
-      output_config: { format: zodOutputFormat(ScreenshotSchema) },
+      output_config: { effort: "low", format: zodOutputFormat(ScreenshotSchema) },
     });
+    if (res.stop_reason === "max_tokens") throw new ScreenshotError("truncated", "Claude ran out of room before finishing. Try fewer screenshots.");
     if (res.stop_reason === "refusal") throw new ScreenshotError("refused", "The screenshots couldn't be read. Try again, or enter the details yourself.");
     if (!res.parsed_output) throw new ScreenshotError("unreadable", "We couldn't make sense of those screenshots. Try a clearer capture, or enter the details yourself.");
     return toDraft(res.parsed_output);
   } catch (e) {
     if (e instanceof ScreenshotError) throw e;
-    if (e instanceof Anthropic.AuthenticationError) throw new ScreenshotError("bad_key", "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY on the server.");
-    if (e instanceof Anthropic.RateLimitError) throw new ScreenshotError("rate", "Claude is busy right now. Wait a moment and try again.");
-    if (e instanceof Anthropic.BadRequestError) throw new ScreenshotError("too_big", "Those screenshots couldn't be processed. Try fewer or smaller ones.");
-    throw new ScreenshotError("unknown", "Something went wrong reading the screenshots. Try again, or enter the details yourself.");
+    const detail = describeError(e);
+    if (e instanceof Anthropic.AuthenticationError) throw new ScreenshotError("bad_key", "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY on the server.", detail);
+    if (e instanceof Anthropic.PermissionDeniedError) throw new ScreenshotError("bad_key", "This Anthropic key isn't allowed to use that model. Check the key's permissions and your account.", detail);
+    if (e instanceof Anthropic.NotFoundError) throw new ScreenshotError("model", `Anthropic doesn't know the model "${model}". Set ANTHROPIC_VISION_MODEL to one your account can use.`, detail);
+    if (e instanceof Anthropic.RateLimitError) throw new ScreenshotError("rate", "Claude is busy right now. Wait a moment and try again.", detail);
+    if (e instanceof Anthropic.APIConnectionTimeoutError) throw new ScreenshotError("timeout", "Claude took too long to answer. Try fewer or smaller screenshots.", detail);
+    if (e instanceof Anthropic.APIConnectionError) throw new ScreenshotError("busy", "We couldn't reach Claude. Try again in a moment.", detail);
+    if (e instanceof Anthropic.BadRequestError) {
+      const credit = /credit balance|billing/i.test(detail);
+      throw new ScreenshotError("too_big", credit ? "Your Anthropic account has run out of credit. Add credit at console.anthropic.com." : "Claude rejected the request. Try fewer or smaller screenshots.", detail);
+    }
+    if (e instanceof Anthropic.InternalServerError || (typeof (e as { status?: unknown })?.status === "number" && (e as { status: number }).status >= 500)) {
+      throw new ScreenshotError("busy", "Claude is overloaded right now. Try again in a minute.", detail);
+    }
+    throw new ScreenshotError("unknown", "Something went wrong reading the screenshots. Try again, or enter the details yourself.", detail);
   }
 }
 

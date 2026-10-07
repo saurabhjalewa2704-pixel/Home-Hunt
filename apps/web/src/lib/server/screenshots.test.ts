@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { ScreenshotError, ScreenshotSchema, cropPhoto, normaliseScreenshot, readScreenshots, toDraft, type ScreenshotRead } from "./screenshots";
+import Anthropic from "@anthropic-ai/sdk";
+import { ScreenshotError, describeError, ScreenshotSchema, cropPhoto, normaliseScreenshot, readScreenshots, toDraft, type ScreenshotRead } from "./screenshots";
 
 const empty: ScreenshotRead = {
   address: null, postcode: null, asking_price: null, price_qualifier: null, property_type: null, beds: null, baths: null, receptions: null,
@@ -105,5 +106,39 @@ describe("normaliseScreenshot", () => {
     const out = await normaliseScreenshot(await sharp({ create: { width: 100, height: 100, channels: 4, background: "#0f0" } }).png().toBuffer());
     expect((await sharp(out!).metadata()).format).toBe("jpeg");
     expect(await normaliseScreenshot(Buffer.from("<html>not an image</html>"))).toBeNull();
+  });
+});
+
+describe("readScreenshots errors", () => {
+  const failing = (err: unknown) => ({ messages: { parse: vi.fn(async () => { throw err; }) } }) as never;
+  const hdr = new Headers();
+  const run = (err: unknown) => readScreenshots([Buffer.from("x")], { client: failing(err), model: "claude-opus-5-5" });
+
+  it("names the model when Anthropic says it doesn't exist", async () => {
+    const e = new Anthropic.NotFoundError(404, { type: "error", error: { type: "not_found_error", message: "model: claude-opus-5-5" } }, "x", hdr);
+    await expect(run(e)).rejects.toMatchObject({ code: "model", message: expect.stringContaining("claude-opus-5-5"), detail: expect.stringContaining("404") });
+  });
+  it("tells you when the account is out of credit", async () => {
+    const e = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }, "x", hdr);
+    await expect(run(e)).rejects.toMatchObject({ message: expect.stringContaining("run out of credit") });
+  });
+  it("separates a timeout, an unreachable API and an overloaded one", async () => {
+    await expect(run(new Anthropic.APIConnectionTimeoutError())).rejects.toMatchObject({ code: "timeout" });
+    await expect(run(new Anthropic.APIConnectionError({ message: "boom" }))).rejects.toMatchObject({ code: "busy" });
+    const e = new Anthropic.InternalServerError(529, { type: "error", error: { type: "overloaded_error", message: "Overloaded" } }, "x", hdr);
+    await expect(run(e)).rejects.toMatchObject({ code: "busy" });
+  });
+  it("keeps an unexpected error's detail without leaking a key", async () => {
+    const r = await run(new Error("failed with sk-ant-api03-SECRET123 here")).catch((x) => x);
+    expect(r.code).toBe("unknown");
+    expect(r.detail).not.toContain("SECRET123");
+    expect(describeError({ status: 500, name: "X", message: "m" })).toBe("500 X: m");
+  });
+  it("reports a truncated answer, and sends low effort with room to answer", async () => {
+    const client = { messages: { parse: vi.fn(async () => ({ parsed_output: null, stop_reason: "max_tokens" })) } } as never;
+    await expect(readScreenshots([Buffer.from("x")], { client })).rejects.toMatchObject({ code: "truncated" });
+    const arg = (client as { messages: { parse: ReturnType<typeof vi.fn> } }).messages.parse.mock.calls[0][0] as { max_tokens: number; output_config: { effort: string } };
+    expect(arg.output_config.effort).toBe("low");
+    expect(arg.max_tokens).toBeGreaterThanOrEqual(16000);
   });
 });

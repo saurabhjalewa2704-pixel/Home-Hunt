@@ -36,6 +36,7 @@ export default function AddPage() {
   const [saving, setSaving] = useState(false);
   const [shots, setShots] = useState<Shot[]>([]);
   const [shotNote, setShotNote] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [unreadable, setUnreadable] = useState<string[]>([]);
   const shotsRef = useRef<Shot[]>([]);
   shotsRef.current = shots;
@@ -72,13 +73,15 @@ export default function AddPage() {
     if (!shots.length) return;
     setPhase("loading");
     setError(null);
+    setErrorDetail(null);
     try {
       const body = new FormData();
       (await prepareScreenshots(shots.map((x) => x.blob))).forEach((b, i) => body.append("images", b, `screenshot-${i}.jpg`));
       const res = await fetch("/api/extract-screenshots", { method: "POST", body });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = json?.error?.message ?? "We couldn't read those screenshots.";
+        const msg = json?.error?.message ?? (res.status === 504 || res.status === 413 ? "That took too long or was too large. Try fewer or smaller screenshots." : "We couldn't read those screenshots.");
+        setErrorDetail(json?.error?.detail ?? `HTTP ${res.status}`);
         if (json?.error?.code === "no_key") {
           // No AI key on the server: keep the first screenshot as the picture and let them type the rest.
           setForm(EMPTY); setEdited(new Set()); setResult(null);
@@ -286,7 +289,12 @@ export default function AddPage() {
             <h2 className="m-0 text-xl font-bold">Paste screenshots of the listing</h2>
             <p className="m-0 text-sm leading-5 text-muted">On the listing page, screenshot the photo and then the price and details. Copy each to the clipboard, then press <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">Ctrl</kbd> / <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">⌘</kbd> + <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">V</kbd> here. Add up to {MAX_SHOTS}, or drop files on this box.</p>
           </div>
-          {error && <p role="alert" className="m-0 rounded-xl p-3 text-sm chip-danger">{error}</p>}
+          {error && (
+            <div role="alert" className="flex flex-col gap-1 rounded-xl p-3 text-sm chip-danger">
+              <span>{error}</span>
+              {errorDetail && <span className="text-[12.5px] opacity-80">Details: {errorDetail}</span>}
+            </div>
+          )}
           {shotNote && <p role="status" className="m-0 text-sm text-muted">{shotNote}</p>}
           <div className="flex min-h-[120px] flex-wrap items-center gap-3 rounded-xl border-2 border-dashed p-3" style={{ borderColor: "var(--btn-border)" }}>
             {shots.map((x, i) => (
