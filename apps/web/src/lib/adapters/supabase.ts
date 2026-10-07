@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idb, outbox } from "../offline";
 import { clearPersona, getPersona } from "../persona";
+import { explainLoadError, looksOffline } from "./explain";
 import { supabaseBrowser } from "../supabase";
 import type { Data, RowOf, TableName } from "../types";
 import { TABLES } from "../types";
@@ -32,9 +33,11 @@ export class SupabaseAdapter implements Adapter {
       data = await this.loadAll();
       idb.put("cache", data, CACHE_KEY).catch(() => {});
     } catch (e) {
-      // Offline: fall back to the last snapshot so the schedule and assessments still open.
-      data = (await idb.get<Data>("cache", CACHE_KEY).catch(() => undefined)) ?? null;
-      if (!data) throw new Error(e instanceof Error && /relation|schema/i.test(e.message) ? "The database isn't set up yet. Run the SQL in supabase/migrations first." : "You're offline and nothing is saved on this device yet.");
+      // Only fall back to the saved copy when the device is genuinely offline. A real
+      // database or key problem must be shown, not hidden behind "you're offline".
+      const cached = looksOffline(e) ? await idb.get<Data>("cache", CACHE_KEY).catch(() => undefined) : undefined;
+      if (!cached) throw new Error(explainLoadError(e));
+      data = cached;
       this.emit("offline");
     }
     this.data = data;
