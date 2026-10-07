@@ -1,18 +1,40 @@
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import { ScreenshotError, cleanApiKey, describeError, ScreenshotSchema, cropPhoto, normaliseScreenshot, readScreenshots, toDraft, type ScreenshotRead } from "./screenshots";
 
 const empty: ScreenshotRead = {
-  address: null, postcode: null, asking_price: null, price_qualifier: null, property_type: null, beds: null, baths: null, receptions: null,
-  floor_area_sqft: null, floor_area_sqm: null, tenure: null, lease_years: null, service_charge: null, ground_rent: null,
-  council_tax_band: null, epc: null, listing_id: null, agent_name: null, agency: null, agent_phone: null, key_features: [],
-  description: null, photo: null, unreadable: [],
+  address: "", postcode: "", asking_price: -1, price_qualifier: "unknown", property_type: "", beds: -1, baths: -1, receptions: -1,
+  floor_area_sqft: -1, floor_area_sqm: -1, tenure: "unknown", lease_years: -1, service_charge: -1, ground_rent: -1,
+  council_tax_band: "", epc: "", listing_id: "", agent_name: "", agency: "", agent_phone: "", key_features: [],
+  description: "", photo: { found: false, screenshot: 0, x: 0, y: 0, width: 0, height: 0 }, unreadable: [],
 };
 
 const png = (w: number, h: number, color = "#3a7") => sharp({ create: { width: w, height: h, channels: 3, background: color } }).jpeg().toBuffer();
 
+describe("ScreenshotSchema limits", () => {
+  it("stays well inside Claude's cap of 16 union-typed parameters (nullable fields count)", () => {
+    const json = JSON.stringify(zodOutputFormat(ScreenshotSchema).schema);
+    const unions = (json.match(/"anyOf"|"oneOf"|"type":\[/g) ?? []).length;
+    expect(unions).toBeLessThanOrEqual(8);
+    expect(json).not.toContain("$ref");
+  });
+});
+
 describe("toDraft", () => {
+  it("treats the not-shown markers as missing", () => {
+    const { draft, fieldsRead, photo } = toDraft(empty);
+    expect(draft).toEqual({});
+    expect(fieldsRead).toEqual([]);
+    expect(photo).toBeNull();
+  });
+  it("keeps a studio's 0 beds and maps a found photo", () => {
+    const { draft, photo } = toDraft({ ...empty, beds: 0, photo: { found: true, screenshot: 1.0, x: 0.1, y: 0.2, width: 0.5, height: 0.4 } });
+    expect(draft.beds).toBe(0);
+    expect(photo).toEqual({ screenshot: 1, x: 0.1, y: 0.2, width: 0.5, height: 0.4 });
+  });
+
   it("keeps plausible values and drops nonsense", () => {
     const { draft, fieldsRead } = toDraft({
       ...empty, address: " Ramsden Road, Balham ", postcode: "sw12 9qt", asking_price: 710000, beds: 2, baths: 2, floor_area_sqft: 860,
