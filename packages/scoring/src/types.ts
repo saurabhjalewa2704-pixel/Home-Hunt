@@ -31,6 +31,8 @@ export type Tier = "top_pick" | "strong" | "maybe" | "unlikely" | "ruled_out";
 export interface ScoringConfig {
   version: number;
   budget: number;
+  /** Smallest public green space, in hectares, that counts as a park (used by the proximity service). */
+  parkMinHectares: number;
   qualifierUplift: number;
   budgetCurve: Curve;
   weights: Record<CriterionKey, number>;
@@ -92,7 +94,8 @@ export type RatingKey =
   | "noise"
   | "layout"
   | "street"
-  | `bedroom_${number}`;
+  | `bedroom_${number}`
+  | `bathroom_${number}`;
 
 export interface ScoreAssessment {
   memberId: string;

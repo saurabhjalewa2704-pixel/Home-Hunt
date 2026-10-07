@@ -4,6 +4,7 @@ import type { ScoringConfig } from "./types";
 export const DEFAULT_CONFIG: ScoringConfig = {
   version: 1,
   budget: 750_000,
+  parkMinHectares: 1,
   qualifierUplift: 0.02,
   budgetCurve: [
     [650_000, 1.0],

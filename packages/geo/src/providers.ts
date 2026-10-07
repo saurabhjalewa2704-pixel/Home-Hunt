@@ -4,6 +4,8 @@ import { DEFAULT_GEO_CONFIG } from "./types";
 
 type F = typeof fetch;
 
+const CONVENIENCE = /\b(express|local|metro|convenience|central|food to go|simply food)\b/i;
+
 /** postcodes.io: free, UK-specific. Falls back to the outward code centroid. */
 export class PostcodesIo implements Geocoder {
   constructor(private f: F = fetch) {}
@@ -67,7 +69,25 @@ export class OverpassFinder implements PlaceFinder {
       }
       return out;
     }
-    return [];
+    // Free fallback for shops and food when no Google Places key is set.
+    const filters: Partial<Record<ProximityCategory, string>> = {
+      supermarket: `["shop"="supermarket"]`,
+      convenience: `["shop"~"convenience|supermarket"]`,
+      gym: `["leisure"="fitness_centre"]`,
+      restaurants: `["amenity"~"restaurant|cafe|fast_food"]`,
+    };
+    const f = filters[category];
+    if (!f) return [];
+    const els = await this.query(`[out:json][timeout:25];(node${f}${around};way${f}${around};);out center;`);
+    const places = els
+      .map((e) => ({ name: e.tags?.name ?? e.tags?.brand ?? "", lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon, brand: `${e.tags?.brand ?? ""} ${e.tags?.name ?? ""}` }))
+      .filter((p): p is { name: string; lat: number; lng: number; brand: string } => !!p.name && p.lat !== undefined && p.lng !== undefined);
+    const brands = this.cfg.supermarketBrands.map((b) => b.toLowerCase());
+    const isBrand = (s: string) => brands.some((b) => s.toLowerCase().includes(b));
+    const isConv = (s: string) => CONVENIENCE.test(s);
+    const keep = (p: { brand: string }) =>
+      category === "supermarket" ? isBrand(p.brand) && !isConv(p.brand) : category === "convenience" ? isConv(p.brand) || !isBrand(p.brand) : true;
+    return places.filter(keep).map(({ name, lat, lng }) => ({ name, lat, lng }));
   }
 }
 
@@ -77,7 +97,6 @@ interface GPlace {
   primaryType?: string;
 }
 
-const CONVENIENCE = /\b(express|local|metro|convenience|central|food to go|simply food)\b/i;
 
 /** Supermarkets, gyms and restaurants from Google Places (New) Nearby Search. */
 export class GooglePlacesFinder implements PlaceFinder {

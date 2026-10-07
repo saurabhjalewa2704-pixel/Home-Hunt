@@ -63,10 +63,11 @@ function areaSub(area: number | null, c: ScoringConfig): number | null {
 
 function restMean(a: ScoreAssessment): number | null {
   const r = a.ratings;
-  const beds = Object.entries(r)
-    .filter(([k]) => k.startsWith("bedroom_"))
+  // Bedrooms and any extra bathrooms (bathroom_2 = en suite) join the mean.
+  const rooms = Object.entries(r)
+    .filter(([k]) => k.startsWith("bedroom_") || k.startsWith("bathroom_"))
     .map(([, v]) => v);
-  return meanRating([...beds, r.bathrooms, r.outdoor, r.storage, r.light, r.condition, r.noise, r.layout, r.street]);
+  return meanRating([...rooms, r.bathrooms, r.outdoor, r.storage, r.light, r.condition, r.noise, r.layout, r.street]);
 }
 
 function prosConsAdjustment(items: ScoreProCon[], c: ScoringConfig): number {

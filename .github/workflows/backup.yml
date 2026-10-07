@@ -1,0 +1,22 @@
+# FR-D2: a daily database backup. Needs the repository SECRET SUPABASE_DB_URL
+# (the project's connection string). Keep this repository PRIVATE: the dump is
+# stored as a workflow artifact for 30 days. Supabase Pro also has its own daily backups.
+name: Daily database backup
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_BACKUP == 'true' }}
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: pg_dump --no-owner --format=custom --schema=public "$SUPABASE_DB_URL" -f homehunt.dump
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homehunt-backup-${{ github.run_id }}
+          path: homehunt.dump
+          retention-days: 30
