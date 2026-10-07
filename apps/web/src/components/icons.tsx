@@ -84,3 +84,6 @@ export const IHouse = ({ w = 120, h = 84 }: { w?: number; h?: number }) => (
     <path d="M80 84V68h12v16" />
   </svg>
 );
+export const IShot = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p, 22)} viewBox="0 0 22 22"><rect x="3" y="5" width="16" height="12" rx="2" /><path d="M7 5l1-2h6l1 2M11 11m-3 0a3 3 0 106 0 3 3 0 10-6 0" /></svg>
+);

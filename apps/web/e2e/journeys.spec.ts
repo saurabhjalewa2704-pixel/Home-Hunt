@@ -203,3 +203,83 @@ test("board fits a phone with no sideways scroll @phone", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+/** Put a generated PNG on a synthetic clipboard and fire a real paste event, as Cmd/Ctrl+V does. */
+async function pasteScreenshots(page: Page, count = 1) {
+  await page.evaluate(async (n) => {
+    const dt = new DataTransfer();
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("canvas");
+      c.width = 900; c.height = 600;
+      const g = c.getContext("2d")!;
+      g.fillStyle = i ? "#ddd" : "#7aa"; g.fillRect(0, 0, 900, 600);
+      g.fillStyle = "#222"; g.font = "40px sans-serif"; g.fillText(`Listing screenshot ${i + 1}`, 40, 80);
+      const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
+      dt.items.add(new File([blob], `shot-${i}.png`, { type: "image/png" }));
+    }
+    document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, count);
+}
+
+const TINY_JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+
+test("paste screenshots, read them, review, and save with the photo as the home's picture", async ({ page }) => {
+  let upload = "";
+  await page.route("**/api/extract-screenshots", async (route) => {
+    upload = (route.request().postDataBuffer() ?? Buffer.alloc(0)).toString("latin1");
+    await route.fulfill({
+      json: {
+        cover: TINY_JPEG, photoFound: true, unreadable: ["ground_rent"],
+        result: {
+          draft: { portal: null, listing_url: null, listing_id: "66123", asking_price: 725000, price_qualifier: "guide", property_type: "Flat", beds: 2, baths: 1, floor_area_sqft: 790, tenure: "leasehold", lease_years: 120, service_charge: null, ground_rent: null, council_tax_band: "D", epc: "C", address: "Thurleigh Road, Balham, London", postcode: "SW12 8UB", lat: null, lng: null, receptions: null, key_features: [], description: null, image_urls: [], agent_name: null, agency: null, agent_phone: null },
+          sources: { address: "inferred", asking_price: "inferred", price_qualifier: "inferred", postcode: "inferred", property_type: "inferred", beds: "inferred", baths: "inferred", floor_area_sqft: "inferred", tenure: "inferred", lease_years: "inferred", service_charge: "missing", ground_rent: "missing", council_tax_band: "inferred", epc: "inferred" },
+          coreFound: 5, needsAi: false,
+        },
+      },
+    });
+  });
+  await page.route("**/api/proximity", (r) => r.fulfill({ json: { origin: { lat: 51.45, lng: -0.15, precision: "exact" }, rows: [], unresolved: [], approximate: false } }));
+  await openAs(page, "m-saurabh", "/add", { sample: false });
+
+  await pasteScreenshots(page, 2);
+  await expect(page.getByRole("heading", { name: "Paste screenshots of the listing" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Screenshot \d$/ })).toHaveCount(2);
+  await page.getByRole("button", { name: "Remove screenshot 2" }).click();
+  await expect(page.getByRole("img", { name: /^Screenshot \d$/ })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Read the screenshot" }).click();
+  await expect(page.getByRole("heading", { name: "Check what we found" })).toBeVisible();
+  expect(upload).toContain('name="images"');
+  expect(upload).toContain("image/jpeg");
+  await expect(page.getByLabel("Address")).toHaveValue("Thurleigh Road, Balham, London");
+  await expect(page.getByLabel("Asking price (£)")).toHaveValue("725000");
+  // Read from a picture, so it is flagged for a second look; unreadable fields are called out.
+  await expect(page.getByText("Worked out, please check").first()).toBeVisible();
+  await expect(page.getByText(/Couldn't read: ground rent/)).toBeVisible();
+  await expect(page.getByRole("img", { name: "First listing photo" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Save home" }).click();
+  await expect(page.getByRole("heading", { name: "Thurleigh Road", level: 1 })).toBeVisible();
+  await page.goto("/");
+  await expect(page.locator('img[src^="data:image/jpeg"]:visible').first()).toBeVisible();
+});
+
+test("without an AI key the screenshot is kept as the photo and the details are typed by hand", async ({ page }) => {
+  await page.route("**/api/extract-screenshots", (r) => r.fulfill({ status: 501, json: { error: { code: "no_key", message: "Reading screenshots needs an Anthropic API key." } } }));
+  await openAs(page, "m-vedika", "/add", { sample: false });
+  await pasteScreenshots(page, 1);
+  await page.getByRole("button", { name: "Read the screenshot" }).click();
+  await expect(page.getByRole("heading", { name: "Enter the details" })).toBeVisible();
+  await expect(page.getByText("Reading screenshots needs an Anthropic API key.")).toBeVisible();
+  await expect(page.getByRole("img", { name: "First listing photo" })).toBeVisible();
+});
+
+test("a failed read keeps the screenshots so you can retry", async ({ page }) => {
+  await page.route("**/api/extract-screenshots", (r) => r.fulfill({ status: 422, json: { error: { code: "unreadable", message: "We couldn't make sense of those screenshots." } } }));
+  await openAs(page, "m-vedika", "/add", { sample: false });
+  await pasteScreenshots(page, 1);
+  await page.getByRole("button", { name: "Read the screenshot" }).click();
+  await expect(page.getByText("We couldn't make sense of those screenshots.")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Screenshot 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Read the screenshot" })).toBeEnabled();
+});

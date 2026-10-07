@@ -18,6 +18,7 @@ With no environment variables it runs in **local mode**: data lives in that one 
 | PRD area | Where |
 | --- | --- |
 | Scoring, tiers, ranking, stamp duty (§6, §7, FR-S, FR-X1) | `packages/scoring`: pure functions, config-driven, golden test for the §6.7 worked example (75.5, 69.8, combined 72.6) |
+| Screenshot import | `/api/extract-screenshots` + the Add page: paste or drop up to 6 listing screenshots; Claude (official SDK, structured output) reads the facts and finds the main photo, which is cropped out as the home's picture |
 | Listing import (§9.2, FR-I) | `packages/importers` + `/api/import`: Rightmove, Zoopla, OnTheMarket adapters, JSON-LD / Open Graph / text fallbacks, Claude API extraction, paste-text and manual fallbacks, SSRF-safe image copy |
 | Walking times (§9.3, FR-L) | `packages/geo` + `/api/proximity`: postcodes.io, OpenStreetMap, optional Google Places/Routes or OpenRouteService; manual overrides are never overwritten |
 | Screens S1 to S10 | `apps/web/src/app`: Board, Add, Property (8 tabs), Schedule/Today, 6-step rating stepper, Compare, Agents, Settings, Sign-in |
@@ -39,12 +40,18 @@ Anyone who knows your site address can open it and pick a name, and the database
 
 Optional daily backup (FR-D2): keep the repo private, add the secret `SUPABASE_DB_URL` and the variable `ENABLE_BACKUP=true`. Supabase Pro also includes daily backups.
 
+## Adding a home from screenshots (works when the portals block links)
+
+On **Add a home**, take screenshots of the listing (the photo, then the price and details), copy each, and press Ctrl/⌘ + V on the page. You can also drop files or choose them from your photos. **Read the screenshots** sends them to Claude, which fills the same review form as a link import, with every field marked "Worked out, please check". The listing's main photo is cropped out and kept as the home's picture; if it can't be found, your first screenshot is used and you can pick a different one.
+
+This needs `ANTHROPIC_API_KEY` set on the server (Vercel). Without it you'll be told so, and your first screenshot is kept as the photo while you type the details. It uses `claude-opus-5-5` by default; set `ANTHROPIC_VISION_MODEL` to change that. Screenshots are processed in memory and are not stored. The browser shrinks them to fit Vercel's 4.5 MB request limit.
+
 ## Tests
 
 ```bash
 npm test             # 80 unit tests: scoring (every curve breakpoint, gates, caps, ties), importers (fixtures), geo
 npm run typecheck
-npm run build && npm run e2e   # 12 browser journeys, laptop and phone
+npm run build && npm run e2e   # 15 browser journeys, laptop and phone
 ```
 
 ## Decisions and deviations to know about
@@ -65,5 +72,6 @@ npm run build && npm run e2e   # 12 browser journeys, laptop and phone
 - **Supabase path is untested against a live project** (no credentials here): the adapter, SQL policies, storage and live sync are written and typechecked but have never run. Local mode, the API routes, scoring and the UI are what the tests exercise. Run the SQL on a scratch project and try it from two devices before relying on it.
 - **Portal parsers use synthetic fixtures.** I couldn't capture real Rightmove/Zoopla/OnTheMarket pages, so the adapters follow the data shapes I expect. Save a real page for each portal into `packages/importers/test/fixtures/` and fix any field that doesn't parse; the paste-text and manual fallbacks cover you meanwhile.
 - OpenStreetMap, Google and postcodes.io calls are tested with mocked responses only.
+- **Screenshot reading is tested with a mocked Claude** (request shape, parsing, cropping, errors), not against the live API. Try it with a few real Zoopla screenshots and check the fields and the cropped photo.
 - Not built (the PRD's "Should" items): web-push and email reminders (FR-V5), AI suggestion of impact and criterion for pros and cons (FR-C5). Phase 2 items are out of scope.
 - `npm audit` reports no issues in production dependencies; the remaining dev-only findings are in the test runner (vitest).

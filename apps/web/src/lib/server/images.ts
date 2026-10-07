@@ -14,7 +14,11 @@ export interface StoredCover {
  */
 export async function storeCover(imageUrl: string, householdId: string | null): Promise<StoredCover | null> {
   const buf = await fetchPublicImage(imageUrl);
-  if (!buf) return null;
+  return buf ? storeCoverFromBuffer(buf, householdId) : null;
+}
+
+/** Same as storeCover, for image bytes we already hold (a cropped screenshot, say). */
+export async function storeCoverFromBuffer(buf: Buffer, householdId: string | null): Promise<StoredCover | null> {
   try {
     const base = sharp(buf, { failOn: "none" }).rotate();
     const [large, thumb] = await Promise.all([
