@@ -1,6 +1,5 @@
-import type { NextConfig } from "next";
-
-const config: NextConfig = {
+/** @type {import('next').NextConfig} */
+const config = {
   transpilePackages: ["@homehunt/scoring", "@homehunt/importers", "@homehunt/geo"],
   poweredByHeader: false,
   async headers() {
