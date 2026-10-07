@@ -132,6 +132,23 @@ export function describeError(e: unknown): string {
   return `${typeof o.status === "number" ? o.status + " " : ""}${type}${msg ? `: ${msg}` : ""}`;
 }
 
+/**
+ * Trim the key and refuse anything that can't be a real one. A pasted placeholder such as "sk-ant-…"
+ * would otherwise fail deep inside the HTTP layer with a baffling "ByteString" error.
+ */
+export function cleanApiKey(raw: string | undefined): string | undefined {
+  const key = raw?.trim().replace(/^["']|["']$/g, "");
+  if (!key) return undefined;
+  if (!/^[\x21-\x7E]+$/.test(key) || key.length < 30 || /\.\.\.|\[|<|your[-_ ]?key/i.test(key)) {
+    throw new ScreenshotError(
+      "bad_key",
+      "ANTHROPIC_API_KEY in Vercel doesn't look like a real key. It should be the full key copied from console.anthropic.com (it starts with sk-ant- and is about 100 characters, with no spaces, quotes or …). Fix the variable and redeploy.",
+      `key has ${key.length} characters`,
+    );
+  }
+  return key;
+}
+
 export interface ReadOptions {
   apiKey?: string;
   model?: string;
@@ -141,7 +158,7 @@ export interface ReadOptions {
 
 /** Ask Claude to read one or more listing screenshots (JPEG bytes) in a single request. */
 export async function readScreenshots(images: Buffer[], opts: ReadOptions = {}): Promise<ScreenshotResult> {
-  const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
+  const apiKey = cleanApiKey(opts.apiKey ?? process.env.ANTHROPIC_API_KEY);
   if (!opts.client && !apiKey) throw new ScreenshotError("no_key", "Reading screenshots needs an Anthropic API key. Add ANTHROPIC_API_KEY to the server's environment.");
   const client = opts.client ?? new Anthropic({ apiKey, maxRetries: 2, timeout: 55_000 });
   const model = opts.model ?? process.env.ANTHROPIC_VISION_MODEL ?? process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";

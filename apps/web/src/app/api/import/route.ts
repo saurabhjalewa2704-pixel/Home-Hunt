@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { householdId } from "@/lib/server/auth";
 import { storeCover } from "@/lib/server/images";
 import { clientKey, limited } from "@/lib/server/ratelimit";
+import { cleanApiKey } from "@/lib/server/screenshots";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -23,7 +24,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // A malformed key just turns AI extraction off here: the structured result still works.
+    let apiKey: string | undefined;
+    try {
+      apiKey = cleanApiKey(process.env.ANTHROPIC_API_KEY);
+    } catch {
+      apiKey = undefined;
+    }
     const ai = apiKey ? { apiKey, model: process.env.ANTHROPIC_MODEL || undefined } : null;
     let result;
     if (typeof body.text === "string" && body.text.trim()) {

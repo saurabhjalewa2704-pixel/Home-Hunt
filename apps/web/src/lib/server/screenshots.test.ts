@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
-import { ScreenshotError, describeError, ScreenshotSchema, cropPhoto, normaliseScreenshot, readScreenshots, toDraft, type ScreenshotRead } from "./screenshots";
+import { ScreenshotError, cleanApiKey, describeError, ScreenshotSchema, cropPhoto, normaliseScreenshot, readScreenshots, toDraft, type ScreenshotRead } from "./screenshots";
 
 const empty: ScreenshotRead = {
   address: null, postcode: null, asking_price: null, price_qualifier: null, property_type: null, beds: null, baths: null, receptions: null,
@@ -140,5 +140,24 @@ describe("readScreenshots errors", () => {
     const arg = (client as { messages: { parse: ReturnType<typeof vi.fn> } }).messages.parse.mock.calls[0][0] as { max_tokens: number; output_config: { effort: string } };
     expect(arg.output_config.effort).toBe("low");
     expect(arg.max_tokens).toBeGreaterThanOrEqual(16000);
+  });
+});
+
+describe("cleanApiKey", () => {
+  const real = "sk-ant-api03-" + "A1b2C3d4".repeat(12);
+  it("accepts a real-looking key and trims whitespace and quotes", () => {
+    expect(cleanApiKey(`  "${real}"\n`)).toBe(real);
+    expect(cleanApiKey(undefined)).toBeUndefined();
+    expect(cleanApiKey("   ")).toBeUndefined();
+  });
+  it("rejects the pasted placeholder that caused the ByteString error", () => {
+    expect(() => cleanApiKey("sk-ant-\u2026")).toThrow(ScreenshotError);
+    expect(() => cleanApiKey("sk-ant-\u2026")).toThrow(/doesn't look like a real key/);
+    expect(() => cleanApiKey("sk-ant-...")).toThrow(ScreenshotError);
+    expect(() => cleanApiKey("<your-key-here>")).toThrow(ScreenshotError);
+    expect(() => cleanApiKey(real.slice(0, 20) + "\u00e9" + real.slice(20))).toThrow(ScreenshotError);
+  });
+  it("is applied before any request is made", async () => {
+    await expect(readScreenshots([Buffer.from("x")], { apiKey: "sk-ant-\u2026" })).rejects.toMatchObject({ code: "bad_key" });
   });
 });
