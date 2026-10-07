@@ -35,7 +35,7 @@ function Stop({ e, now, members }: { e: Entry; now: number; members: Member[] })
   const tel = (d.agent?.mobile || d.agent?.phone || "").replace(/\s+/g, "");
   const att = v.attendees;
   return (
-    <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-3 md:grid-cols-[64px_minmax(0,1fr)]">
+    <div className="grid grid-cols-[62px_minmax(0,1fr)] gap-3 md:grid-cols-[72px_minmax(0,1fr)]">
       <span className="pt-3.5 text-[15px] font-bold" style={{ color: past ? "var(--muted)" : undefined }}>{fmtTime(v.starts_at)}</span>
       <div className="panel flex flex-col gap-3 p-3.5" style={past && !rated ? { borderColor: "var(--accent)", boxShadow: "inset 0 0 0 1px var(--accent)" } : undefined}>
         <div className="flex items-center gap-3">
@@ -133,7 +133,7 @@ export default function SchedulePage() {
           <div key={e.v.id} className="flex flex-col gap-2">
             <Stop e={e} now={now} members={s.data.members} />
             {l && leaveBy && (
-              <div className="flex items-center gap-2 py-0.5 pl-[64px] text-[13px] text-muted">{l.walk ? <IWalk /> : <ITrain />}{l.label}. Leave by {fmtTime(leaveBy.toISOString())}. <span className="opacity-70">Estimate</span></div>
+              <div className="flex items-center gap-2 py-0.5 pl-[74px] text-[13px] text-muted">{l.walk ? <IWalk /> : <ITrain />}{l.label}. Leave by {fmtTime(leaveBy.toISOString())}. <span className="opacity-70">Estimate</span></div>
             )}
           </div>
         );

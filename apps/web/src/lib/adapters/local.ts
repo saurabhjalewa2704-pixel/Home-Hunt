@@ -37,6 +37,16 @@ export class LocalAdapter implements Adapter {
     }
     if (me && !this.data.members.some((m) => m.id === me)) me = null;
     window.addEventListener("storage", this.onStorage);
+    // Don't lose the last edit if the tab closes or navigates inside the debounce window.
+    const flushNow = () => {
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+        this.flush();
+      }
+    };
+    window.addEventListener("pagehide", flushNow);
+    document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushNow());
     return { data: this.data, me };
   }
 
