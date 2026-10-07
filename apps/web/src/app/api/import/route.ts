@@ -1,6 +1,6 @@
 import { ImportError, importFromText, importFromUrl } from "@homehunt/importers";
 import { NextResponse } from "next/server";
-import { requireMember } from "@/lib/server/auth";
+import { householdId } from "@/lib/server/auth";
 import { storeCover } from "@/lib/server/images";
 import { clientKey, limited } from "@/lib/server/ratelimit";
 
@@ -13,8 +13,6 @@ export const maxDuration = 30;
  * saved here: the client shows the preview and saves after review (FR-I6).
  */
 export async function POST(req: Request) {
-  const who = await requireMember();
-  if (!who.ok) return NextResponse.json({ error: { code: "auth", message: "Sign in to add a home." } }, { status: 401 });
   if (limited(clientKey(req))) return NextResponse.json({ error: { code: "rate", message: "Slow down a little and try again in a minute." } }, { status: 429 });
 
   let body: { url?: unknown; text?: unknown };
@@ -43,7 +41,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: { code: "bad_request", message: "Paste a listing link or the listing text." } }, { status: 400 });
     }
     const first = result.draft.image_urls[0];
-    const stored = first ? await storeCover(first, who.householdId) : null;
+    const stored = first ? await storeCover(first, await householdId()) : null;
     return NextResponse.json({ result, cover: stored?.cover ?? null });
   } catch (e) {
     if (e instanceof ImportError) {

@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/** Demo mode runs on localStorage, so each test starts from the sample homes as a chosen buyer. */
-async function openAs(page: Page, who: "m-saurabh" | "m-vedika", path = "/") {
+/**
+ * The app starts empty. Tests choose a persona (as a person would on the first screen)
+ * and, where they need homes, load the sample homes from Settings.
+ */
+async function openAs(page: Page, who: "m-saurabh" | "m-vedika", path = "/", opts: { sample?: boolean } = { sample: true }) {
   await page.goto("/");
   await page.evaluate((id) => {
     localStorage.clear();
@@ -9,8 +12,32 @@ async function openAs(page: Page, who: "m-saurabh" | "m-vedika", path = "/") {
     sessionStorage.setItem("hh.me", id);
     localStorage.setItem("hh.me", id);
   }, who);
+  if (opts.sample) {
+    await page.goto("/settings");
+    page.once("dialog", (d) => void d.accept());
+    await page.getByRole("button", { name: "Load sample homes" }).click();
+    await expect(page.getByRole("button", { name: "Load sample homes" })).toBeVisible();
+  }
   await page.goto(path);
 }
+
+test("a fresh install is a clean slate: pick a name, then an empty board with no sample homes", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Who's looking today?" })).toBeVisible();
+  await expect(page.getByText(/password/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Vedika" }).click();
+  await expect(page.getByText("Paste your first listing link")).toBeVisible();
+  for (const home of ["Elsynge Road", "Bolingbroke Grove", "Grafton Square", "Ramsden Road"]) {
+    await expect(page.getByText(home)).toHaveCount(0);
+  }
+  // The choice sticks on reload, and "Switch" returns to the picker without deleting anything.
+  await page.reload();
+  await expect(page.getByText("Paste your first listing link")).toBeVisible();
+  await page.getByRole("button", { name: "Switch" }).click();
+  await expect(page.getByRole("heading", { name: "Who's looking today?" })).toBeVisible();
+});
 
 test("board ranks the sample homes by tier with scores, gates and the To view group", async ({ page }) => {
   await openAs(page, "m-saurabh");
@@ -39,7 +66,7 @@ test("the PRD worked example shows on the Score tab: 75.5, 69.8, combined 72.6",
 
 test("add a home by hand, see it on the board as provisional", async ({ page }) => {
   await page.route("**/api/proximity", (r) => r.fulfill({ status: 200, json: { origin: { lat: 51.45, lng: -0.15, precision: "exact" }, rows: [{ category: "station", place_name: "Balham", place_lat: 51.443, place_lng: -0.152, walk_min: 7, walk_m: 560, method: "routed" }], unresolved: [], approximate: false } }));
-  await openAs(page, "m-vedika", "/add");
+  await openAs(page, "m-vedika", "/add", { sample: false });
   await page.getByRole("button", { name: "Enter the details yourself" }).click();
   await page.getByLabel("Address").fill("Testwood Road, Balham, London SW12");
   await page.getByLabel("Asking price (£)").fill("680000");
@@ -68,7 +95,7 @@ test("import preview marks fetched and missing fields, then saves; blocked impor
     });
   });
   await page.route("**/api/proximity", (r) => r.fulfill({ status: 200, json: { origin: { lat: 51.44, lng: -0.15, precision: "approximate" }, rows: [], unresolved: [], approximate: true } }));
-  await openAs(page, "m-saurabh", "/add");
+  await openAs(page, "m-saurabh", "/add", { sample: false });
   await page.getByLabel(/Listing link/).fill("https://www.rightmove.co.uk/properties/1");
   await page.getByRole("button", { name: "Fetch details" }).click();
   await expect(page.getByRole("heading", { name: "Check what we found" })).toBeVisible();
@@ -92,7 +119,11 @@ test("ratings stay private until both submit, and the score updates", async ({ b
   // Two tabs of one browser share storage, like two people on one demo.
   const a = await ctx.newPage();
   await a.goto("/");
-  await a.evaluate(() => { localStorage.clear(); sessionStorage.setItem("hh.me", "m-saurabh"); });
+  await a.evaluate(() => { localStorage.clear(); sessionStorage.setItem("hh.me", "m-saurabh"); localStorage.setItem("hh.me", "m-saurabh"); });
+  await a.goto("/settings");
+  a.once("dialog", (d) => void d.accept());
+  await a.getByRole("button", { name: "Load sample homes" }).click();
+  await expect(a.getByRole("button", { name: "Load sample homes" })).toBeVisible();
   await a.goto("/property/p-ramsden#ratings");
   await expect(a.getByText("Rate it first, then compare")).toBeVisible();
 

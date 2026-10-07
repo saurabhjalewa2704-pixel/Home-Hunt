@@ -11,7 +11,6 @@ import {
   type WalkRouter,
 } from "@homehunt/geo";
 import { NextResponse } from "next/server";
-import { requireMember } from "@/lib/server/auth";
 import { clientKey, limited } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
@@ -25,8 +24,6 @@ export const maxDuration = 30;
  * that is labelled as one. All providers sit behind the same interfaces.
  */
 export async function POST(req: Request) {
-  const who = await requireMember();
-  if (!who.ok) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   if (limited(clientKey(req), 20)) return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
 
   const b = (await req.json().catch(() => ({}))) as { lat?: unknown; lng?: unknown; postcode?: unknown; parkMinHectares?: unknown };

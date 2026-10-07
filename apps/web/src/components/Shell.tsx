@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { gbp } from "@/lib/format";
 import { activeConfig } from "@/lib/derive";
@@ -39,19 +39,15 @@ function Centered({ children }: { children: ReactNode }) {
 export function Shell({ children }: { children: ReactNode }) {
   const s = useStore();
   const path = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
     void store.start();
   }, []);
   useEffect(() => {
-    if (s.status === "needs-auth") router.replace("/login");
-  }, [s.status, router]);
-  useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
 
-  if (s.status === "loading" || s.status === "needs-auth") {
+  if (s.status === "loading") {
     return (
       <Centered>
         <div className="flex items-center gap-3"><ILogo /><span className="text-xl font-extrabold">HomeHunt</span></div>
@@ -68,21 +64,12 @@ export function Shell({ children }: { children: ReactNode }) {
       </Centered>
     );
   }
-  if (s.status === "denied") {
-    return (
-      <Centered>
-        <h1 className="m-0 text-2xl font-extrabold">This account isn't part of a household</h1>
-        <p className="m-0 text-muted">HomeHunt is private to two people. Sign in with the email address that was invited, or ask whoever set it up to add you.</p>
-        <button className="btn w-fit" onClick={() => void store.signOut()}>Sign out</button>
-      </Centered>
-    );
-  }
   if (s.status === "choose") {
     return (
       <Centered>
         <div className="flex items-center gap-3"><ILogo /><span className="text-xl font-extrabold">HomeHunt</span></div>
         <h1 className="m-0 text-[28px] leading-8 font-extrabold tracking-[-0.02em]">Who's looking today?</h1>
-        <p className="m-0 text-muted">Demo mode: everything is saved in this browser, with sample homes to explore. Open a second tab as the other buyer to see private ratings in action.</p>
+        <p className="m-0 text-muted">{s.mode === "supabase" ? "Pick your name. There's no password: this just tells HomeHunt whose ratings are whose. You can switch any time from the menu." : "Pick your name. Everything is saved in this browser only, so you'll each need to share one device, or connect a database to share between phones."}</p>
         <div className="flex flex-col gap-3">
           {s.data.members.map((m) => (
             <button key={m.id} className="btn btn-lg justify-start gap-3" onClick={() => store.chooseMe(m.id)}>

@@ -1,5 +1,8 @@
--- HomeHunt schema (PRD section 8). Every table is scoped to a household and
--- protected by row-level security, so only the two members can see anything.
+-- HomeHunt schema (PRD section 8) for ONE household of two people, with no sign-in.
+-- Each person just picks their name in the app. Because there are no accounts, the
+-- database is open to anyone holding the project's public (anon) key: treat the
+-- deployed URL as private, and see the README for how to lock it down further.
+-- Starts empty: no homes, only the household and its two members.
 
 create extension if not exists pgcrypto;
 
@@ -14,11 +17,9 @@ create table public.households (
 create table public.members (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households (id) on delete cascade,
-  user_id uuid references auth.users (id) on delete set null,
   display_name text not null,
   colour text not null default '#2B5C8A',
-  email text,
-  unique (household_id, user_id)
+  unique (household_id, display_name)
 );
 
 create table public.scoring_config (
@@ -190,87 +191,28 @@ create table public.score_snapshots (
 );
 create index on public.score_snapshots (property_id, created_at desc);
 
--- ------------------------------------------------------- access helpers
--- security definer so policies can look at members without recursing into
--- their own policy.
+-- ------------------------------------------------------------ access
+-- No accounts: the anon role may read and write everything in the app's tables.
+-- Which buyer's ratings are shown is decided in the app, not the database.
 
-create or replace function public.is_member(h uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.members m where m.household_id = h and m.user_id = auth.uid());
-$$;
+do $$
+declare t text;
+begin
+  foreach t in array array['households','members','scoring_config','properties','status_events','agents','viewings',
+    'assessments','pro_cons','proximity','offers','notes','photos','score_snapshots'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('create policy %I on public.%I for all to anon, authenticated using (true) with check (true)', t || '_open', t);
+  end loop;
+end $$;
 
-create or replace function public.is_property_member(p uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from public.properties pr join public.members m on m.household_id = pr.household_id
-    where pr.id = p and m.user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.owns_member(mid uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.members m where m.id = mid and m.user_id = auth.uid());
-$$;
-
--- "I have submitted my own rating for this home": the gate on seeing the other buyer's.
-create or replace function public.i_submitted(p uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from public.assessments a join public.members m on m.id = a.member_id
-    where a.property_id = p and m.user_id = auth.uid() and a.submitted_at is not null
-  );
-$$;
-
--- ------------------------------------------------------------ row-level security
-
-alter table public.households enable row level security;
-alter table public.members enable row level security;
-alter table public.scoring_config enable row level security;
-alter table public.properties enable row level security;
-alter table public.status_events enable row level security;
-alter table public.agents enable row level security;
-alter table public.viewings enable row level security;
-alter table public.assessments enable row level security;
-alter table public.pro_cons enable row level security;
-alter table public.proximity enable row level security;
-alter table public.offers enable row level security;
-alter table public.notes enable row level security;
-alter table public.photos enable row level security;
-alter table public.score_snapshots enable row level security;
-
-create policy households_read on public.households for select using (public.is_member(id));
-create policy households_update on public.households for update using (public.is_member(id));
-
-create policy members_read on public.members for select using (public.is_member(household_id));
-create policy members_update on public.members for update using (public.is_member(household_id)) with check (public.is_member(household_id));
-
-create policy scoring_config_all on public.scoring_config for all using (public.is_member(household_id)) with check (public.is_member(household_id));
-create policy properties_all on public.properties for all using (public.is_member(household_id)) with check (public.is_member(household_id));
-create policy agents_all on public.agents for all using (public.is_member(household_id)) with check (public.is_member(household_id));
-
-create policy status_events_all on public.status_events for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy viewings_all on public.viewings for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy proximity_all on public.proximity for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy offers_all on public.offers for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy notes_all on public.notes for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy photos_all on public.photos for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-create policy score_snapshots_all on public.score_snapshots for all using (public.is_property_member(property_id)) with check (public.is_property_member(property_id));
-
--- Assessments and pros/cons are personal: you always see your own; you see the
--- other buyer's only once you have submitted yours (FR-R1). Only the owner can write.
-create policy assessments_read on public.assessments for select using (
-  public.owns_member(member_id) or (public.is_property_member(property_id) and submitted_at is not null and public.i_submitted(property_id))
-);
-create policy assessments_write on public.assessments for insert with check (public.owns_member(member_id) and public.is_property_member(property_id));
-create policy assessments_update on public.assessments for update using (public.owns_member(member_id)) with check (public.owns_member(member_id));
-create policy assessments_delete on public.assessments for delete using (public.owns_member(member_id));
-
-create policy pro_cons_read on public.pro_cons for select using (
-  public.owns_member(member_id) or (public.is_property_member(property_id) and public.i_submitted(property_id))
-);
-create policy pro_cons_write on public.pro_cons for insert with check (public.owns_member(member_id) and public.is_property_member(property_id));
-create policy pro_cons_update on public.pro_cons for update using (public.owns_member(member_id)) with check (public.owns_member(member_id));
-create policy pro_cons_delete on public.pro_cons for delete using (public.owns_member(member_id));
+-- Members are created below, once; the app may only rename them.
+drop policy members_open on public.members;
+create policy members_read on public.members for select to anon, authenticated using (true);
+create policy members_update on public.members for update to anon, authenticated using (true) with check (true);
+-- Likewise the household row.
+drop policy households_open on public.households;
+create policy households_read on public.households for select to anon, authenticated using (true);
+create policy households_update on public.households for update to anon, authenticated using (true) with check (true);
 
 -- ------------------------------------------------------------ realtime
 
@@ -284,39 +226,17 @@ alter publication supabase_realtime add table
 insert into storage.buckets (id, name, public) values ('listing-images', 'listing-images', false), ('property-photos', 'property-photos', false)
 on conflict (id) do nothing;
 
--- Files live under <household id>/...; a member can touch only their own household's folder.
-create policy listing_images_read on storage.objects for select to authenticated
-  using (bucket_id = 'listing-images' and public.is_member(((storage.foldername(name))[1])::uuid));
-create policy property_photos_read on storage.objects for select to authenticated
-  using (bucket_id = 'property-photos' and public.is_member(((storage.foldername(name))[1])::uuid));
-create policy property_photos_insert on storage.objects for insert to authenticated
-  with check (bucket_id = 'property-photos' and public.is_member(((storage.foldername(name))[1])::uuid));
-create policy property_photos_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'property-photos' and public.is_member(((storage.foldername(name))[1])::uuid));
+-- Listing images are written by the server (service role) and read through signed URLs.
+-- Photos you take are uploaded straight from the browser.
+create policy property_photos_all on storage.objects for all to anon, authenticated
+  using (bucket_id = 'property-photos') with check (bucket_id = 'property-photos');
+create policy listing_images_read on storage.objects for select to anon, authenticated
+  using (bucket_id = 'listing-images');
 
--- ------------------------------------------------------------ one-off setup
+-- ------------------------------------------------------------ the household (clean slate)
 
--- Run once in the SQL editor, after inviting both people under Authentication > Users:
---   select public.bootstrap_household('Our home', 'a@example.com', 'Saurabh', 'b@example.com', 'Vedika');
--- No sign-up flow exists: only these two users are linked to a household.
-create or replace function public.bootstrap_household(h_name text, email_a text, name_a text, email_b text, name_b text)
-returns uuid language plpgsql security definer set search_path = public, auth as $$
-declare
-  hid uuid;
-  ua uuid;
-  ub uuid;
-begin
-  if exists (select 1 from public.households) then
-    raise exception 'A household already exists. HomeHunt supports one household.';
-  end if;
-  select id into ua from auth.users where lower(email) = lower(email_a);
-  select id into ub from auth.users where lower(email) = lower(email_b);
-  if ua is null or ub is null then
-    raise exception 'Invite both people under Authentication > Users first, then run this again.';
-  end if;
-  insert into public.households (name) values (h_name) returning id into hid;
-  insert into public.members (household_id, user_id, display_name, colour, email) values
-    (hid, ua, name_a, '#2B5C8A', email_a), (hid, ub, name_b, '#7A3E8E', email_b);
-  return hid;
-end $$;
-revoke all on function public.bootstrap_household(text, text, text, text, text) from public, anon, authenticated;
+with h as (
+  insert into public.households (name) select 'Saurabh and Vedika' where not exists (select 1 from public.households) returning id
+)
+insert into public.members (household_id, display_name, colour)
+select h.id, v.n, v.c from h, (values ('Saurabh', '#2B5C8A'), ('Vedika', '#7A3E8E')) as v (n, c);

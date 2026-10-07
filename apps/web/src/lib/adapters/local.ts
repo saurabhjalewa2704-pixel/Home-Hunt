@@ -1,10 +1,10 @@
-import { emptyData, sampleData } from "../seed";
+import { emptyData } from "../seed";
+import { clearPersona, getPersona, setPersona } from "../persona";
 import type { Data, RowOf, TableName } from "../types";
 import { TABLES } from "../types";
 import type { Adapter, SyncState } from "./types";
 
 const KEY = "hh.data.v1";
-const ME = "hh.me";
 
 /**
  * Demo / offline-first adapter: everything lives in this browser's
@@ -27,14 +27,10 @@ export class LocalAdapter implements Adapter {
     } catch {
       /* corrupted or unavailable: start fresh */
     }
-    this.data = data ?? sampleData();
+    // A clean slate: sample homes only appear if you ask for them in Settings.
+    this.data = data ?? emptyData();
     if (!data) this.flush();
-    let me: string | null = null;
-    try {
-      me = sessionStorage.getItem(ME) ?? localStorage.getItem(ME);
-    } catch {
-      /* ignore */
-    }
+    let me = getPersona();
     if (me && !this.data.members.some((m) => m.id === me)) me = null;
     window.addEventListener("storage", this.onStorage);
     // Don't lose the last edit if the tab closes or navigates inside the debounce window.
@@ -51,12 +47,7 @@ export class LocalAdapter implements Adapter {
   }
 
   static chooseMe(id: string) {
-    try {
-      localStorage.setItem(ME, id);
-      sessionStorage.setItem(ME, id);
-    } catch {
-      /* ignore */
-    }
+    setPersona(id);
   }
 
   private onStorage = (e: StorageEvent) => {
@@ -125,12 +116,7 @@ export class LocalAdapter implements Adapter {
     return () => this.syncListeners.delete(cb);
   }
   async signOut() {
-    try {
-      localStorage.removeItem(ME);
-      sessionStorage.removeItem(ME);
-    } catch {
-      /* ignore */
-    }
+    clearPersona();
   }
 }
 

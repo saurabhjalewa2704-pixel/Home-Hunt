@@ -107,7 +107,7 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
-        <p className="m-0 text-sm text-muted">{s.mode === "supabase" ? "Only the two invited email addresses can sign in. To change who is invited, update the household in your Supabase project (see the README)." : "Demo mode: open a second browser tab and choose the other name to rate as your partner."}</p>
+        <p className="m-0 text-sm text-muted">{s.mode === "supabase" ? "There is no sign-in: each of you picks your name on your own device. Renaming here updates it for both of you." : "Everything here is saved in this browser only. Open a second tab and choose the other name to rate as your partner."}</p>
       </Panel>
 
       <Panel title="Budget">
@@ -199,8 +199,8 @@ export default function SettingsPage() {
 
       <Panel title="This device">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-sm text-muted">Signed in as {me?.display_name}. Agents are on their <Link href="/agents">own page</Link>.</span>
-          <button className="btn" onClick={() => void store.signOut()}>{s.mode === "local" ? "Switch person" : "Sign out"}</button>
+          <span className="text-sm text-muted">You are {me?.display_name}. Agents are on their <Link href="/agents">own page</Link>.</span>
+          <button className="btn" onClick={() => void store.signOut()}>Switch person</button>
           {s.mode === "local" && (
             <>
               <button className="btn" onClick={() => { if (confirm("Replace everything with the sample homes?")) void store.loadSample(); }}>Load sample homes</button>

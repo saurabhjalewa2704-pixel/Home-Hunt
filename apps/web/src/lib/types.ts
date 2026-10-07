@@ -35,7 +35,6 @@ export const RULE_OUT_REASONS = ["Over budget", "Too far from station", "Too sma
 export interface Member {
   id: string;
   household_id: string;
-  user_id: string | null;
   display_name: string;
   colour: string;
 }

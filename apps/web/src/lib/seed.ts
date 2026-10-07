@@ -10,8 +10,8 @@ export function emptyData(): Data {
   return {
     household: { id: HOUSEHOLD_ID, name: "Saurabh and Vedika", created_at: created },
     members: [
-      { id: SAURABH, household_id: HOUSEHOLD_ID, user_id: null, display_name: "Saurabh", colour: "#2B5C8A" },
-      { id: VEDIKA, household_id: HOUSEHOLD_ID, user_id: null, display_name: "Vedika", colour: "#7A3E8E" },
+      { id: SAURABH, household_id: HOUSEHOLD_ID, display_name: "Saurabh", colour: "#2B5C8A" },
+      { id: VEDIKA, household_id: HOUSEHOLD_ID, display_name: "Vedika", colour: "#7A3E8E" },
     ],
     scoring_config: [{ id: "cfg-1", household_id: HOUSEHOLD_ID, version: 1, config: DEFAULT_CONFIG, buyer_type: "first_time" }],
     properties: [],

@@ -4,9 +4,8 @@ export type SyncState = "saved-local" | "syncing" | "synced" | "offline";
 
 export interface InitResult {
   data: Data;
-  /** The signed-in buyer's member id, or null when someone still has to choose or sign in. */
+  /** The buyer who picked themselves on this device, or null while they still have to choose. */
   me: string | null;
-  needsAuth?: boolean;
 }
 
 export interface Adapter {
@@ -21,5 +20,6 @@ export interface Adapter {
   onSync(cb: (s: SyncState) => void): () => void;
   /** Replace everything (demo reset, import). */
   replaceAll?(data: Data): Promise<void>;
+  /** Forget which buyer this device is. */
   signOut?(): Promise<void>;
 }

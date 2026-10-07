@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idb, outbox } from "../offline";
+import { clearPersona, getPersona } from "../persona";
 import { supabaseBrowser } from "../supabase";
 import type { Data, RowOf, TableName } from "../types";
 import { TABLES } from "../types";
@@ -26,27 +27,25 @@ export class SupabaseAdapter implements Adapter {
   }
 
   async init() {
-    const { data: sess } = await this.sb.auth.getSession();
-    const uid = sess.session?.user.id;
-    if (!uid) return { data: {} as Data, me: null, needsAuth: true };
     let data: Data | null = null;
     try {
       data = await this.loadAll();
       idb.put("cache", data, CACHE_KEY).catch(() => {});
-    } catch {
+    } catch (e) {
       // Offline: fall back to the last snapshot so the schedule and assessments still open.
       data = (await idb.get<Data>("cache", CACHE_KEY).catch(() => undefined)) ?? null;
-      if (!data) throw new Error("You're offline and nothing is saved on this phone yet.");
+      if (!data) throw new Error(e instanceof Error && /relation|schema/i.test(e.message) ? "The database isn't set up yet. Run the SQL in supabase/migrations first." : "You're offline and nothing is saved on this device yet.");
       this.emit("offline");
     }
     this.data = data;
-    const me = data.members.find((m) => m.user_id === uid)?.id ?? null;
+    const picked = getPersona();
+    const me = data.members.find((m) => m.id === picked)?.id ?? null;
     this.count = (await outbox.all().catch(() => [])).length;
     window.addEventListener("online", () => void this.flush());
     window.addEventListener("offline", () => this.emit("offline"));
     void this.flush();
     this.listenRealtime();
-    return { data, me, needsAuth: false };
+    return { data, me };
   }
 
   private async loadAll(): Promise<Data> {
@@ -150,7 +149,6 @@ export class SupabaseAdapter implements Adapter {
     return () => this.syncListeners.delete(cb);
   }
   async signOut() {
-    await this.sb.auth.signOut();
-    await idb.del("cache", CACHE_KEY).catch(() => {});
+    clearPersona();
   }
 }

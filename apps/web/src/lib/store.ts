@@ -2,6 +2,7 @@
 import { useSyncExternalStore } from "react";
 import { DEFAULT_CONFIG, type CriterionKey, type ScoringConfig } from "@homehunt/scoring";
 import { LocalAdapter } from "./adapters/local";
+import { setPersona } from "./persona";
 import { SupabaseAdapter } from "./adapters/supabase";
 import type { Adapter, SyncState } from "./adapters/types";
 import { EVERYONE, activeConfig, deriveAll } from "./derive";
@@ -25,7 +26,7 @@ import {
   type Viewing,
 } from "./types";
 
-export type StoreStatus = "loading" | "ready" | "needs-auth" | "choose" | "denied" | "error";
+export type StoreStatus = "loading" | "ready" | "choose" | "error";
 
 export interface StoreState {
   status: StoreStatus;
@@ -77,8 +78,7 @@ class Store {
       const res = await this.adapter.init();
       this.adapter.onSync((sync) => this.set({ sync, pending: this.adapter!.pending() }));
       this.adapter.subscribe((table, ev, row) => this.applyRemote(table, ev, row));
-      if (res.needsAuth) return this.set({ status: "needs-auth" });
-      if (!res.me) return this.set({ data: res.data, status: this.state.mode === "local" ? "choose" : "denied" });
+      if (!res.me) return this.set({ data: res.data, status: "choose" });
       this.set({ data: res.data, me: res.me, status: "ready" });
     } catch (e) {
       this.set({ status: "error", error: e instanceof Error ? e.message : String(e) });
@@ -86,15 +86,14 @@ class Store {
   }
 
   chooseMe(id: string) {
-    LocalAdapter.chooseMe(id);
+    setPersona(id);
     this.set({ me: id, status: "ready" });
   }
 
+  /** Go back to "who's looking?". Nothing is deleted. */
   async signOut() {
     await this.adapter?.signOut?.();
-    this.started = false;
-    this.set({ me: null, status: this.state.mode === "local" ? "choose" : "needs-auth" });
-    if (this.state.mode === "supabase") window.location.assign("/login");
+    this.set({ me: null, status: "choose" });
   }
 
   private applyRemote(table: TableName, ev: "upsert" | "delete", row: { id: string } & Record<string, unknown>) {
