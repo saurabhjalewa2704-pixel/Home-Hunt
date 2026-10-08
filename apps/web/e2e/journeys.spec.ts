@@ -283,3 +283,89 @@ test("a failed read keeps the screenshots so you can retry", async ({ page }) =>
   await expect(page.getByRole("img", { name: "Screenshot 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Read the screenshot" })).toBeEnabled();
 });
+
+test("upload a PDF: its pages are read, the text goes along, and the agent's details are pre-filled and saved", async ({ page }) => {
+  let upload = "";
+  await page.route("**/api/extract-screenshots", async (route) => {
+    upload = (route.request().postDataBuffer() ?? Buffer.alloc(0)).toString("latin1");
+    await route.fulfill({
+      json: {
+        cover: TINY_JPEG, photoFound: true, unreadable: [],
+        result: {
+          draft: { portal: null, listing_url: null, listing_id: null, asking_price: 725000, price_qualifier: "guide", property_type: "Flat", beds: 2, baths: null, floor_area_sqft: 790, tenure: "leasehold", lease_years: 120, service_charge: 2400, ground_rent: null, council_tax_band: "D", epc: "C", address: "Thurleigh Road, Balham, London", postcode: "SW12", lat: null, lng: null, receptions: null, key_features: [], description: null, image_urls: [], agent_name: "Sam Reid", agency: "Dwellings Balham", agent_phone: "07700 900123", agent_email: "sam.reid@dwellings.co.uk" },
+          sources: { address: "inferred", asking_price: "inferred", beds: "inferred", agent_name: "inferred", agency: "inferred", agent_phone: "inferred", agent_email: "inferred" },
+          coreFound: 4, needsAi: false,
+        },
+      },
+    });
+  });
+  await page.route("**/api/proximity", (r) => r.fulfill({ json: { origin: { lat: 51.45, lng: -0.15, precision: "approximate" }, rows: [], unresolved: [], approximate: false } }));
+  await openAs(page, "m-saurabh", "/add", { sample: false });
+
+  await page.locator('input[type="file"][accept*="pdf"]').first().setInputFiles("e2e/fixtures/brochure.pdf");
+  // The two pages of the PDF appear as pictures, ready to read.
+  await expect(page.getByRole("img", { name: "brochure.pdf page 1" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("img", { name: "brochure.pdf page 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Read the listing" }).click();
+  await expect(page.getByRole("heading", { name: "Check what we found" })).toBeVisible();
+
+  // Pages went up as images, along with the text printed in the PDF.
+  expect(upload).toContain('name="images"');
+  expect(upload).toContain('name="pdf_text"');
+  expect(upload).toContain("Guide price");
+  expect(upload).toContain("sam.reid@dwellings.co.uk");
+
+  await expect(page.getByLabel("Address")).toHaveValue("Thurleigh Road, Balham, London");
+  await expect(page.getByLabel("Asking price (£)")).toHaveValue("725000");
+  // The agent read from the PDF is filled in for checking, with phone and email.
+  await expect(page.getByText("Read from the listing. Please check these details.")).toBeVisible();
+  await expect(page.getByLabel("Agent name")).toHaveValue("Sam Reid");
+  await expect(page.getByLabel("Agent phone")).toHaveValue("07700 900123");
+  await expect(page.getByLabel("Agent email")).toHaveValue("sam.reid@dwellings.co.uk");
+  await page.getByRole("button", { name: "Save home" }).click();
+  await expect(page.getByRole("heading", { name: "Thurleigh Road", level: 1 })).toBeVisible();
+
+  // The new agent is on the Agents page with a working Call (mobile), Text and Email.
+  await page.goto("/agents");
+  const card = page.getByRole("region", { name: "Sam Reid" });
+  await expect(card.getByText("Dwellings Balham")).toBeVisible();
+  await expect(card.getByRole("link", { name: /^Call Sam Reid/ })).toHaveAttribute("href", "tel:07700900123");
+  await expect(card.getByRole("link", { name: /^Text Sam Reid/ })).toHaveAttribute("href", "sms:07700900123");
+  await expect(card.getByRole("link", { name: /^Email Sam Reid/ })).toHaveAttribute("href", "mailto:sam.reid@dwellings.co.uk");
+});
+
+test("a password-protected or broken PDF gets a plain message and nothing is lost", async ({ page }) => {
+  await openAs(page, "m-vedika", "/add", { sample: false });
+  await page.locator('input[type="file"][accept*="pdf"]').first().setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("this is not a pdf") });
+  await expect(page.getByText(/couldn't open that PDF/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Upload a PDF" })).toBeVisible();
+});
+
+test("agents: add a mobile, office phone and email, with Call, Text and Email links built from them", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/agents", { sample: false });
+  await page.getByRole("button", { name: "Add an agent" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Priya Shah");
+  await page.getByLabel("Agency", { exact: true }).fill("Foxtons");
+  await page.getByRole("textbox", { name: "Mobile" }).fill("not a number");
+  await expect(page.getByText("That doesn't look like a phone number.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save agent" })).toBeDisabled();
+  await page.getByRole("textbox", { name: "Mobile" }).fill("+44 (0)7700 900456");
+  await page.getByLabel("Office phone").fill("020 7946 0000");
+  await page.getByRole("textbox", { name: "Email" }).fill("priya@foxtons.example");
+  await page.getByRole("button", { name: "Save agent" }).click();
+
+  const card = page.getByRole("region", { name: "Priya Shah" });
+  // Numbers and email are written out, and the mobile is the one the Call button dials.
+  await expect(card.getByText("+44 (0)7700 900456")).toBeVisible();
+  await expect(card.getByText("020 7946 0000")).toBeVisible();
+  await expect(card.getByRole("link", { name: /^Call Priya Shah/ })).toHaveAttribute("href", "tel:+447700900456");
+  await expect(card.getByRole("link", { name: /^Email Priya Shah/ })).toHaveAttribute("href", "mailto:priya@foxtons.example");
+
+  // An agent with no number has no Call button, only what can be done.
+  await page.getByRole("button", { name: "Add an agent" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Tom Li");
+  await page.getByRole("button", { name: "Save agent" }).click();
+  const tom = page.getByRole("region", { name: "Tom Li" });
+  await expect(tom.getByText("No phone number or email saved yet.")).toBeVisible();
+  await expect(tom.getByRole("link", { name: /^Call/ })).toHaveCount(0);
+});

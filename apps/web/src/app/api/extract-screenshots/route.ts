@@ -11,7 +11,8 @@ export const maxDuration = 60;
 const fail = (code: string, message: string, status: number, detail?: string) => NextResponse.json({ error: { code, message, detail } }, { status });
 
 /**
- * POST multipart/form-data with `images` (1 to 6 listing screenshots).
+ * POST multipart/form-data with `images` (1 to 6 listing screenshots, or pages of a listing PDF rendered in the
+ * browser) and optionally `pdf_text`, the text printed in that PDF.
  * Claude reads the facts off them and finds the main photo, which is cropped out
  * to become the home's picture. Nothing is saved here: the buyer reviews first (FR-I6).
  */
@@ -19,9 +20,12 @@ export async function POST(req: Request) {
   if (limited(clientKey(req), 10)) return fail("rate", "Slow down a little and try again in a minute.", 429);
 
   let files: File[];
+  let pdfText = "";
   try {
     const form = await req.formData();
     files = form.getAll("images").filter((f): f is File => typeof f !== "string");
+    const t = form.get("pdf_text");
+    if (typeof t === "string") pdfText = t.slice(0, 12_000);
   } catch {
     return fail("bad_request", "That upload didn't come through. Try again.", 400);
   }
@@ -37,7 +41,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const read = await readScreenshots(images);
+    const read = await readScreenshots(images, { pdfText });
     const cropped = await cropPhoto(images, read.photo).catch(() => null);
     const stored = cropped ? await storeCoverFromBuffer(cropped, await householdId()) : null;
     // Everything read from a picture is flagged "please check": it is the model's reading, not the portal's data.

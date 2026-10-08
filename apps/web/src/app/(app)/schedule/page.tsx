@@ -6,7 +6,7 @@ import { IPhone, IPin, ITrain, IWalk } from "@/components/icons";
 import { Avatar, Cover, EmptyState, PageHeader } from "@/components/ui";
 import { deriveAll, type Derived } from "@/lib/derive";
 import { clashes, downloadText, viewingIcs } from "@/lib/ics";
-import { dayKey, fmtLongDay, fmtTime, plural, splitAddress } from "@/lib/format";
+import { bestPhone, dayKey, fmtLongDay, fmtTime, plural, splitAddress, telHref } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import type { Member, Viewing } from "@/lib/types";
 import { TIER_LABELS } from "@/lib/derive";
@@ -32,7 +32,7 @@ function Stop({ e, now, members }: { e: Entry; now: number; members: Member[] })
   const p = d.property;
   const past = new Date(v.starts_at).getTime() + v.duration_min * 60_000 < now;
   const rated = d.iSubmitted;
-  const tel = (d.agent?.mobile || d.agent?.phone || "").replace(/\s+/g, "");
+  const callable = d.agent && telHref(bestPhone(d.agent)) ? d.agent : null;
   const att = v.attendees;
   return (
     <div className="grid grid-cols-[62px_minmax(0,1fr)] gap-3 md:grid-cols-[72px_minmax(0,1fr)]">
@@ -54,7 +54,7 @@ function Stop({ e, now, members }: { e: Entry; now: number; members: Member[] })
         {v.notes && <p className="m-0 text-sm leading-5 text-ink-2">Your notes: {v.notes}</p>}
         <div className="flex flex-wrap gap-2">
           {past && !rated && v.status !== "cancelled" && <Link className="btn btn-p flex-1" href={`/property/${p.id}/rate`}>Rate now</Link>}
-          {tel && <a className="btn flex-1" href={`tel:${tel}`}><IPhone />Call {d.agent?.name.split(" ")[0]}</a>}
+          {callable && <a className="btn flex-1" href={`tel:${telHref(bestPhone(callable))}`}><IPhone />Call {callable.name.split(" ")[0]}</a>}
           <a className="btn flex-1" href={mapsUrl(d)} target="_blank" rel="noopener noreferrer"><IPin />Directions</a>
           {!past && v.status === "booked" && <button className="btn" onClick={() => downloadText(`viewing-${splitAddress(p.address).street.replace(/\W+/g, "-").toLowerCase()}.ics`, viewingIcs(v, p, d.agent))}>.ics</button>}
         </div>

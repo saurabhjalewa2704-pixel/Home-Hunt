@@ -1,21 +1,17 @@
 "use client";
 import { useState } from "react";
 import { store } from "@/lib/store";
-import { IPhone } from "../icons";
+import { AgentContactButtons, AgentDetails } from "../AgentContact";
 import type { Ctx } from "./ctx";
 import { AgentForm } from "../AgentForm";
 
 export function AgentCard({ a }: { a: NonNullable<Ctx["d"]["agent"]> }) {
-  const tel = (a.mobile || a.phone || "").replace(/\s+/g, "");
   return (
     <div className="flex flex-col gap-2.5">
       <span className="text-[15px] font-semibold">{a.name}</span>
       <span className="text-sm text-muted">{[a.agency, a.branch ? `${a.branch} branch` : null].filter(Boolean).join(", ")}</span>
-      <div className="flex flex-wrap gap-2">
-        {tel && <a className="btn" href={`tel:${tel}`}><IPhone />Call {a.mobile || a.phone}</a>}
-        {tel && <a className="btn" href={`sms:${tel}`}>Text</a>}
-        {a.email && <a className="btn" href={`mailto:${a.email}`}>Email</a>}
-      </div>
+      <AgentDetails agent={a} />
+      <div className="flex flex-wrap gap-2"><AgentContactButtons agent={a} showNumber /></div>
       {a.notes && <p className="m-0 text-sm text-muted">{a.notes}</p>}
     </div>
   );

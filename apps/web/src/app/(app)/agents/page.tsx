@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AgentForm } from "@/components/AgentForm";
-import { IPhone } from "@/components/icons";
+import { AgentContactButtons, AgentDetails } from "@/components/AgentContact";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { plural, splitAddress } from "@/lib/format";
 import { useStore } from "@/lib/store";
@@ -18,7 +18,6 @@ export default function AgentsPage() {
       {!agents.length && editing !== "new" && <EmptyState title="No agents yet" body="Agents are added when you save a home, or here." />}
       {agents.map((a) => {
         const homes = s.data.properties.filter((p) => p.default_agent_id === a.id || s.data.viewings.some((v) => v.property_id === p.id && v.agent_id === a.id));
-        const tel = (a.mobile || a.phone || "").replace(/\s+/g, "");
         return (
           <section key={a.id} className="panel flex flex-col gap-3 p-5" aria-label={a.name}>
             {editing === a.id ? <AgentForm agent={a} onSaved={() => setEditing(null)} onCancel={() => setEditing(null)} /> : (
@@ -26,12 +25,11 @@ export default function AgentsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-col gap-0.5"><h2 className="m-0 text-lg font-bold">{a.name}</h2><span className="text-sm text-muted">{[a.agency, a.branch].filter(Boolean).join(", ")}</span></div>
                   <div className="flex flex-wrap gap-2">
-                    {tel && <a className="btn" href={`tel:${tel}`}><IPhone />Call</a>}
-                    {tel && <a className="btn" href={`sms:${tel}`}>Text</a>}
-                    {a.email && <a className="btn" href={`mailto:${a.email}`}>Email</a>}
+                    <AgentContactButtons agent={a} />
                     <button className="btn" onClick={() => setEditing(a.id)}>Edit</button>
                   </div>
                 </div>
+                <AgentDetails agent={a} />
                 {a.notes && <p className="m-0 text-sm text-ink-2">{a.notes}</p>}
                 <p className="m-0 text-sm text-muted">{homes.length ? <>{plural(homes.length, "home")}: {homes.map((p, i) => <span key={p.id}>{i ? ", " : ""}<Link href={`/property/${p.id}`}>{splitAddress(p.address).street}</Link></span>)}</> : "Not linked to any home yet."}</p>
               </>

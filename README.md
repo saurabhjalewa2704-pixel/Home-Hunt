@@ -18,6 +18,8 @@ With no environment variables it runs in **local mode**: data lives in that one 
 | PRD area | Where |
 | --- | --- |
 | Scoring, tiers, ranking, stamp duty (§6, §7, FR-S, FR-X1) | `packages/scoring`: pure functions, config-driven, golden test for the §6.7 worked example (75.5, 69.8, combined 72.6) |
+| PDF import | On the same page, **Upload a PDF** (an agent's brochure, or a listing page saved as PDF). The browser draws the first five pages and the last one as pictures and pulls out the printed text, then both go through the screenshot reader |
+| Agent contact | Each agent has a mobile, office phone and email. Call and Text open the phone's dialler and messages (mobile first), Email opens the mail app. Agent details read from a listing or PDF are pre-filled on the Add page for checking |
 | Screenshot import | `/api/extract-screenshots` + the Add page: paste or drop up to 6 listing screenshots; Claude (official SDK, structured output) reads the facts and finds the main photo, which is cropped out as the home's picture |
 | Listing import (§9.2, FR-I) | `packages/importers` + `/api/import`: Rightmove, Zoopla, OnTheMarket adapters, JSON-LD / Open Graph / text fallbacks, Claude API extraction, paste-text and manual fallbacks, SSRF-safe image copy |
 | Walking times (§9.3, FR-L) | `packages/geo` + `/api/proximity`: postcodes.io, OpenStreetMap, optional Google Places/Routes or OpenRouteService; manual overrides are never overwritten |
@@ -46,6 +48,8 @@ On **Add a home**, take screenshots of the listing (the photo, then the price an
 
 This needs `ANTHROPIC_API_KEY` set on the server (Vercel). Without it you'll be told so, and your first screenshot is kept as the photo while you type the details. It uses `claude-opus-5-5` by default; set `ANTHROPIC_VISION_MODEL` to change that. Screenshots are processed in memory and are not stored. The browser shrinks them to fit Vercel's 4.5 MB request limit.
 
+**PDFs** go the same way. The PDF is opened in your browser (up to 40 MB), up to six pages are drawn as pictures, and the text printed in the PDF is sent alongside to help with small print. Nothing about the PDF itself is uploaded, so large brochures don't hit the request limit. A scanned PDF works too, from the pictures alone. Password-protected PDFs are refused with a message.
+
 ## Tests
 
 ```bash
@@ -72,6 +76,7 @@ npm run build && npm run e2e   # 15 browser journeys, laptop and phone
 - **Supabase path is untested against a live project** (no credentials here): the adapter, SQL policies, storage and live sync are written and typechecked but have never run. Local mode, the API routes, scoring and the UI are what the tests exercise. Run the SQL on a scratch project and try it from two devices before relying on it.
 - **Portal parsers use synthetic fixtures.** I couldn't capture real Rightmove/Zoopla/OnTheMarket pages, so the adapters follow the data shapes I expect. Save a real page for each portal into `packages/importers/test/fixtures/` and fix any field that doesn't parse; the paste-text and manual fallbacks cover you meanwhile.
 - OpenStreetMap, Google and postcodes.io calls are tested with mocked responses only.
+- **PDF page drawing is tested in a real browser (Chromium) with a sample PDF; Claude's reading of PDFs is tested with a mocked Claude**, like screenshots. Try one real brochure.
 - **Screenshot reading is tested with a mocked Claude** (request shape, parsing, cropping, errors), not against the live API. Try it with a few real Zoopla screenshots and check the fields and the cropped photo.
 - Not built (the PRD's "Should" items): web-push and email reminders (FR-V5), AI suggestion of impact and criterion for pros and cons (FR-C5). Phase 2 items are out of scope.
 - `npm audit` reports no issues in production dependencies; the remaining dev-only findings are in the test runner (vitest).

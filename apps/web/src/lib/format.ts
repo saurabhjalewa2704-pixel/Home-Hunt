@@ -39,3 +39,26 @@ export const uid = (): string =>
       });
 
 export const nowIso = () => new Date().toISOString();
+
+/**
+ * A number a phone can dial, or null if there isn't one. Drops spaces, brackets, dashes and "(0)", turns
+ * 0044 / 44 prefixes into +44, and ignores an extension. Used for tel: and sms: links.
+ */
+export function telHref(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let s = raw.replace(/\(\s*0\s*\)/g, "").split(/\b(?:ext|extension|x)\b\.?/i)[0];
+  const plus = s.trim().startsWith("+");
+  s = s.replace(/[^\d]/g, "");
+  if (s.startsWith("00")) return s.length >= 8 ? "+" + s.slice(2) : null;
+  if (plus) return s.length >= 7 ? "+" + s : null;
+  return s.length >= 6 ? s : null;
+}
+
+/** The number to ring first: a mobile if there is one, otherwise the office line. */
+export const bestPhone = (a: { mobile?: string | null; phone?: string | null }) =>
+  [a.mobile, a.phone].find((n) => telHref(n)) ?? null;
+
+export const isEmail = (s: string | null | undefined) => !!s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+
+/** UK mobiles start 07 or +44 7; used to file a single number under Mobile rather than Office phone. */
+export const looksLikeMobile = (raw: string | null | undefined) => /^(\+447|07|00447)\d{9}$/.test(telHref(raw) ?? "");

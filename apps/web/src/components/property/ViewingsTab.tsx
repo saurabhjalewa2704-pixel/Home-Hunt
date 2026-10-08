@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import { clashes, downloadText, viewingIcs } from "@/lib/ics";
-import { fmtLongDay, fmtTime, fmtWhen, splitAddress } from "@/lib/format";
+import { bestPhone, fmtLongDay, fmtTime, fmtWhen, splitAddress, telHref } from "@/lib/format";
 import { store } from "@/lib/store";
 import type { Viewing, ViewingKind, ViewingStatus } from "@/lib/types";
-import { IWarn } from "../icons";
+import { IPhone, IWarn } from "../icons";
 import { Avatar, cx } from "../ui";
 import type { Ctx } from "./ctx";
 
@@ -103,6 +103,7 @@ export function ViewingsTab({ ctx }: { ctx: Ctx }) {
                 <div className="flex items-center gap-2 text-sm text-muted">Going: {v.attendees.map((id) => <Avatar key={id} member={ctx.members.find((m) => m.id === id)} />)}</div>
                 {v.notes && <p className="m-0 text-sm leading-5 text-ink-2">{v.notes}</p>}
                 <div className="flex flex-wrap gap-2">
+                  {agent && v.status === "booked" && !past && telHref(bestPhone(agent)) && <a className="btn" href={`tel:${telHref(bestPhone(agent))}`}><IPhone />Call {agent.name.split(" ")[0]}</a>}
                   {v.status === "booked" && <button className="btn" onClick={() => downloadText(`viewing-${splitAddress(p.address).street.replace(/\W+/g, "-").toLowerCase()}.ics`, viewingIcs(v, p, agent ?? null))}>Add to calendar (.ics)</button>}
                   {past && v.status === "booked" && !iRatedIt && <a className="btn btn-p" href={`/property/${p.id}/rate`}>Rate now</a>}
                   <button className="btn" onClick={() => setEditing(v.id)}>Edit</button>

@@ -29,6 +29,7 @@ export interface ListingDraft {
   agent_name: string | null;
   agency: string | null;
   agent_phone: string | null;
+  agent_email: string | null;
 }
 
 export type DraftField = keyof ListingDraft;
@@ -72,6 +73,7 @@ export function emptyDraft(): ListingDraft {
     agent_name: null,
     agency: null,
     agent_phone: null,
+    agent_email: null,
   };
 }
 

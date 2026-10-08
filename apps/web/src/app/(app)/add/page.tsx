@@ -3,8 +3,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { IDoc, IEdit, IShot, IWarn } from "@/components/icons";
 import { Cover, Field, PageHeader, cx } from "@/components/ui";
-import { gbp, sqftAndSqm, uid } from "@/lib/format";
+import { gbp, isEmail, looksLikeMobile, sqftAndSqm, telHref, uid } from "@/lib/format";
 import { resizeImage } from "@/lib/offline";
+import { PdfError, isPdf, renderPdf } from "@/lib/pdf-client";
 import { refreshProximity } from "@/lib/proximity-client";
 import { prepareScreenshots, toDataUrl, MAX_SHOTS } from "@/lib/screenshots-client";
 import { store, useStore } from "@/lib/store";
@@ -13,7 +14,8 @@ import type { Property } from "@/lib/types";
 import type { ImportResult, ListingDraft } from "@homehunt/importers";
 
 type Phase = "idle" | "loading" | "preview" | "blocked" | "paste" | "manual" | "shots";
-interface Shot { id: string; blob: Blob; url: string }
+/** A pasted screenshot, or one page of an uploaded PDF (which has a label and the id of its file). */
+interface Shot { id: string; blob: Blob; url: string; label?: string; pdf?: string }
 type Src = "fetched" | "inferred" | "missing" | "manual";
 
 const normAddr = (a: string) => a.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -30,7 +32,10 @@ export default function AddPage() {
   const [form, setForm] = useState<Form>(EMPTY);
   const [edited, setEdited] = useState<Set<keyof Form>>(new Set());
   const [agent, setAgent] = useState("");
-  const [newAgent, setNewAgent] = useState({ name: "", agency: "", phone: "" });
+  const [newAgent, setNewAgent] = useState({ name: "", agency: "", phone: "", email: "" });
+  const [agentFromListing, setAgentFromListing] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfTexts, setPdfTexts] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<"shortlisted" | "viewing_booked">("shortlisted");
   const [when, setWhen] = useState("");
   const [saving, setSaving] = useState(false);
@@ -54,20 +59,48 @@ export default function AddPage() {
     });
     setPhase("shots");
   }, []);
+  const addPdf = useCallback(async (file: File) => {
+    const room = MAX_SHOTS - shotsRef.current.length;
+    setPhase("shots");
+    setError(null);
+    if (room < 1) return setShotNote(`You can use up to ${MAX_SHOTS} pages and screenshots at a time. Remove one to add this PDF.`);
+    setPdfBusy(true);
+    try {
+      const out = await renderPdf(file, room);
+      const fid = uid();
+      setShots((cur) => [...cur, ...out.pages.map((blob, i) => ({ id: uid(), blob, url: URL.createObjectURL(blob), label: `${file.name} page ${out.pageNumbers[i]}`, pdf: fid }))]);
+      if (out.text.trim()) setPdfTexts((t) => ({ ...t, [fid]: out.text }));
+      setShotNote(out.pageCount > out.pages.length ? `Using ${out.pages.length} of the ${out.pageCount} pages: the first ones and the last. Remove any you don't need.` : null);
+    } catch (e) {
+      setError(e instanceof PdfError ? e.message : "We couldn't read that PDF. Try again, or paste screenshots of the listing instead.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }, []);
+  /** Anything pasted, dropped or chosen: images become screenshots, a PDF becomes its pages. */
+  const addFiles = useCallback((files: File[]) => {
+    const pdf = files.find(isPdf);
+    const imgs = files.filter((f) => f.type.startsWith("image/"));
+    if (imgs.length) addShots(imgs);
+    if (pdf) void addPdf(pdf);
+  }, [addShots, addPdf]);
   const phaseRef = useRef<Phase>("idle");
   phaseRef.current = phase;
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/") || isPdf(f));
       if (!files.length || ["preview", "manual", "loading"].includes(phaseRef.current)) return;
       e.preventDefault();
-      addShots(files);
+      addFiles(files);
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [addShots]);
+  }, [addFiles]);
   useEffect(() => () => shotsRef.current.forEach((x) => URL.revokeObjectURL(x.url)), []);
   const removeShot = (id: string) => setShots((cur) => { const g = cur.find((x) => x.id === id); if (g) URL.revokeObjectURL(g.url); return cur.filter((x) => x.id !== id); });
+  const hasPdf = shots.some((x) => x.pdf);
+  // Text from a PDF is only sent while at least one of its pages is still in the list.
+  const pdfTextNow = () => [...new Set(shots.map((x) => x.pdf).filter((x): x is string => !!x))].map((fid) => pdfTexts[fid] ?? "").filter(Boolean).join("\n").slice(0, 12_000);
 
   async function readShots() {
     if (!shots.length) return;
@@ -77,6 +110,8 @@ export default function AddPage() {
     try {
       const body = new FormData();
       (await prepareScreenshots(shots.map((x) => x.blob))).forEach((b, i) => body.append("images", b, `screenshot-${i}.jpg`));
+      const text = pdfTextNow();
+      if (text) body.append("pdf_text", text);
       const res = await fetch("/api/extract-screenshots", { method: "POST", body });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -97,6 +132,7 @@ export default function AddPage() {
       setForm(toForm(r.draft));
       setEdited(new Set());
       setUnreadable(json.unreadable ?? []);
+      prefillAgent(r.draft);
       if (json.cover) { setCover(json.cover); setShotNote(null); }
       else { setCover(await toDataUrl(await resizeImage(shots[0].blob, 600))); setShotNote("We couldn't spot the main photo, so we used your first screenshot. Pick a better one below if you like."); }
       setPhase("preview");
@@ -104,6 +140,20 @@ export default function AddPage() {
       setError("We couldn't reach the server. Check your connection and try again.");
       setPhase("shots");
     }
+  }
+  /** Pre-select (or pre-fill) the agent whose details were read from the listing, so they can be checked rather than retyped. */
+  function prefillAgent(d: ListingDraft) {
+    if (!(d.agent_name || d.agency || d.agent_phone || d.agent_email)) return;
+    const tel = telHref(d.agent_phone);
+    const mail = d.agent_email?.toLowerCase();
+    const known = s.data.agents.find((a) =>
+      (tel && (telHref(a.mobile) === tel || telHref(a.phone) === tel)) ||
+      (mail && a.email?.toLowerCase() === mail) ||
+      (d.agent_name && a.name.toLowerCase() === d.agent_name.toLowerCase() && (a.agency ?? "") === (d.agency ?? "")));
+    if (known) { setAgent(known.id); setAgentFromListing(false); return; }
+    setAgent("__new");
+    setNewAgent({ name: d.agent_name ?? "", agency: d.agency ?? "", phone: d.agent_phone ?? "", email: d.agent_email ?? "" });
+    setAgentFromListing(true);
   }
   const useAsPhoto = async (blob: Blob) => { setCover(await toDataUrl(await resizeImage(blob, 600))); setShotNote(null); };
 
@@ -142,6 +192,7 @@ export default function AddPage() {
       setCover(json.cover ?? null);
       setForm(toForm(r.draft));
       setEdited(new Set());
+      prefillAgent(r.draft);
       setPhase("preview");
     } catch {
       setError("We couldn't reach the server. Check your connection, or enter the details yourself.");
@@ -204,7 +255,16 @@ export default function AddPage() {
           address_precision: /\d[A-Z]{2}$/i.test(form.postcode.trim()) || d?.lat ? "exact" : "approximate",
         },
         {
-          agent: agent === "__new" && newAgent.name.trim() ? { name: newAgent.name.trim(), agency: newAgent.agency || null, phone: newAgent.phone || null } : null,
+          // A listing often gives the branch but no person's name, so the branch stands in for the name.
+          agent: agent === "__new" && (newAgent.name.trim() || newAgent.agency.trim())
+            ? {
+                name: newAgent.name.trim() || newAgent.agency.trim(),
+                agency: newAgent.agency.trim() || null,
+                mobile: looksLikeMobile(newAgent.phone) ? newAgent.phone.trim() : null,
+                phone: newAgent.phone.trim() && !looksLikeMobile(newAgent.phone) ? newAgent.phone.trim() : null,
+                email: isEmail(newAgent.email) ? newAgent.email.trim() : null,
+              }
+            : null,
           viewingAt: status === "viewing_booked" && when ? new Date(when).toISOString() : null,
           status: status === "viewing_booked" && !when ? "shortlisted" : status,
         },
@@ -222,6 +282,7 @@ export default function AddPage() {
     setForm(EMPTY);
     setEdited(new Set());
     setError(null);
+    setAgentFromListing(false);
     setPhase("manual");
   };
 
@@ -251,6 +312,7 @@ export default function AddPage() {
       {phase === "idle" && (
         <div className="flex flex-wrap gap-3 text-sm">
           <button className="btn btn-p" onClick={() => setPhase("shots")}><IShot width={18} height={18} />Paste screenshots</button>
+          <label className="btn cursor-pointer"><IDoc width={18} height={18} />Upload a PDF<input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
           <button className="btn" onClick={() => setPhase("paste")}><IDoc width={18} height={18} />Paste the listing text</button>
           <button className="btn" onClick={startManual}><IEdit width={18} height={18} />Enter the details yourself</button>
         </div>
@@ -267,7 +329,7 @@ export default function AddPage() {
           </div>
           <button className="panel flex items-start gap-3.5 p-4 text-left" onClick={() => setPhase("shots")}>
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px]" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}><IShot /></span>
-            <span className="flex flex-col gap-1"><span className="text-base font-bold">Paste screenshots of the listing</span><span className="text-sm leading-5 text-muted">Capture the photo and the details, copy, and paste here. We read the facts and keep the photo.</span></span>
+            <span className="flex flex-col gap-1"><span className="text-base font-bold">Paste screenshots or upload a PDF</span><span className="text-sm leading-5 text-muted">Capture the photo and the details, copy, and paste here, or upload the listing as a PDF. We read the facts and keep the photo.</span></span>
           </button>
           <button className="panel flex items-start gap-3.5 p-4 text-left" onClick={() => setPhase("paste")}>
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px]" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}><IDoc /></span>
@@ -284,10 +346,10 @@ export default function AddPage() {
       {phase === "shots" && (
         <section className="panel flex flex-col gap-4 p-5" aria-label="Paste screenshots"
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); addShots(Array.from(e.dataTransfer.files)); }}>
+          onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}>
           <div className="flex flex-col gap-1">
             <h2 className="m-0 text-xl font-bold">Paste screenshots of the listing</h2>
-            <p className="m-0 text-sm leading-5 text-muted">On the listing page, screenshot the photo and then the price and details. Copy each to the clipboard, then press <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">Ctrl</kbd> / <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">⌘</kbd> + <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">V</kbd> here. Add up to {MAX_SHOTS}, or drop files on this box.</p>
+            <p className="m-0 text-sm leading-5 text-muted">On the listing page, screenshot the photo and then the price and details. Copy each to the clipboard, then press <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">Ctrl</kbd> / <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">⌘</kbd> + <kbd className="rounded border border-line px-1.5 py-0.5 text-[13px]">V</kbd> here. Add up to {MAX_SHOTS}, or drop files on this box. Got the listing as a PDF, such as an agent's brochure or a page saved from Zoopla? Upload it instead and we read its pages.</p>
           </div>
           {error && (
             <div role="alert" className="flex flex-col gap-1 rounded-xl p-3 text-sm chip-danger">
@@ -300,18 +362,20 @@ export default function AddPage() {
             {shots.map((x, i) => (
               <figure key={x.id} className="m-0 flex flex-col gap-1.5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={x.url} alt={`Screenshot ${i + 1}`} className="h-28 w-40 rounded-lg border border-line object-cover object-top" />
-                <button type="button" className="min-h-9 text-[13px] font-semibold text-muted underline" onClick={() => removeShot(x.id)}>Remove screenshot {i + 1}</button>
+                <img src={x.url} alt={x.label ?? `Screenshot ${i + 1}`} className="h-28 w-40 rounded-lg border border-line object-cover object-top" />
+                <button type="button" className="min-h-9 max-w-40 truncate text-[13px] font-semibold text-muted underline" onClick={() => removeShot(x.id)}>Remove {x.label ?? `screenshot ${i + 1}`}</button>
               </figure>
             ))}
-            {!shots.length && <span className="text-sm text-muted">Nothing pasted yet. Press Ctrl/⌘ + V.</span>}
+            {pdfBusy && <span role="status" className="flex items-center gap-2 text-sm text-muted"><span className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent" aria-hidden />Opening the PDF…</span>}
+            {!shots.length && !pdfBusy && <span className="text-sm text-muted">Nothing added yet. Press Ctrl/⌘ + V, or upload a PDF.</span>}
           </div>
           <div className="flex flex-wrap gap-3">
-            <button className="btn btn-p btn-lg" disabled={!shots.length} onClick={() => void readShots()}>Read the screenshot{shots.length === 1 ? "" : "s"}</button>
-            <label className="btn btn-lg cursor-pointer">Choose from files or photos<input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addShots(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+            <button className="btn btn-p btn-lg" disabled={!shots.length || pdfBusy} onClick={() => void readShots()}>{hasPdf ? "Read the listing" : `Read the screenshot${shots.length === 1 ? "" : "s"}`}</button>
+            <label className="btn btn-lg cursor-pointer">Choose screenshots or photos<input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+            <label className="btn btn-lg cursor-pointer"><IDoc width={18} height={18} />Upload a PDF<input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
             <button className="btn btn-lg" onClick={() => { shots.forEach((x) => URL.revokeObjectURL(x.url)); setShots([]); setPhase("idle"); }}>Cancel</button>
           </div>
-          <p className="m-0 text-[13px] text-muted">Screenshots are sent to Claude to read, and are not kept. Capture what you see on screen rather than a full-page scroll, so the text stays sharp.</p>
+          <p className="m-0 text-[13px] text-muted">Screenshots and PDF pages are sent to Claude to read, and are not kept. Capture what you see on screen rather than a full-page scroll, so the text stays sharp.</p>
         </section>
       )}
 
@@ -353,10 +417,10 @@ export default function AddPage() {
               {shotNote && <span role="status" className="text-[13px]" style={{ color: "var(--info-fg)" }}>{shotNote}</span>}
               {shots.length > 0 && (
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-[13px] font-semibold text-ink-2">Use a whole screenshot as the photo instead</span>
+                  <span className="text-[13px] font-semibold text-ink-2">Use a whole screenshot or page as the photo instead</span>
                   <div className="flex flex-wrap gap-2">
                     {shots.map((x, i) => (
-                      <button key={x.id} type="button" className="overflow-hidden rounded-lg border border-line p-0" aria-label={`Use screenshot ${i + 1} as the photo`} onClick={() => void useAsPhoto(x.blob)}>
+                      <button key={x.id} type="button" className="overflow-hidden rounded-lg border border-line p-0" aria-label={`Use ${x.label ?? `screenshot ${i + 1}`} as the photo`} onClick={() => void useAsPhoto(x.blob)}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={x.url} alt="" className="h-14 w-20 object-cover object-top" />
                       </button>
@@ -400,9 +464,13 @@ export default function AddPage() {
               </select>
               {agent === "__new" && (
                 <div className="mt-2 flex flex-col gap-2">
+                  {agentFromListing && <span role="status" className="text-[13px]" style={{ color: "var(--info-fg)" }}>Read from the listing. Please check these details.</span>}
                   <input className="inp" aria-label="Agent name" placeholder="Name" value={newAgent.name} onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })} />
                   <input className="inp" aria-label="Agency" placeholder="Agency and branch" value={newAgent.agency} onChange={(e) => setNewAgent({ ...newAgent, agency: e.target.value })} />
-                  <input className="inp" aria-label="Agent phone" type="tel" placeholder="Phone" value={newAgent.phone} onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })} />
+                  <input className="inp" aria-label="Agent phone" type="tel" inputMode="tel" placeholder="Phone number" value={newAgent.phone} onChange={(e) => setNewAgent({ ...newAgent, phone: e.target.value })} aria-invalid={(!!newAgent.phone.trim() && !telHref(newAgent.phone)) || undefined} />
+                  {!!newAgent.phone.trim() && !telHref(newAgent.phone) && <span className="text-[13px]" style={{ color: "var(--danger)" }}>That doesn't look like a phone number, so there won't be a Call button.</span>}
+                  <input className="inp" aria-label="Agent email" type="email" inputMode="email" placeholder="Email" value={newAgent.email} onChange={(e) => setNewAgent({ ...newAgent, email: e.target.value })} aria-invalid={(!!newAgent.email.trim() && !isEmail(newAgent.email)) || undefined} />
+                  {!!newAgent.email.trim() && !isEmail(newAgent.email) && <span className="text-[13px]" style={{ color: "var(--danger)" }}>That doesn't look like an email address.</span>}
                 </div>
               )}
             </div>
