@@ -651,3 +651,78 @@ test("the mortgage screens fit a phone with no sideways scroll, and the tab bar 
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Menu" })).toHaveCount(0); // closes on navigation
 });
+
+// ---- Update checker ----
+// These need a build that knows its own id and the live address, for example:
+//   VERCEL_GIT_COMMIT_SHA=e2ebuild APP_CANONICAL_URL=http://127.0.0.1:3101 npx next build
+// On an ordinary local build there is nothing to compare, so they skip.
+const LIVE = "http://127.0.0.1:3101";
+const STALE = "http://localhost:3101";
+const NEWER = { build: "newer99", builtAt: "2999-01-01T00:00:00.000Z" };
+
+async function needsStampedBuild(page: Page) {
+  const own = await (await page.request.get(`${LIVE}/api/version`)).json();
+  test.skip(own.build === "local", "needs a stamped build (see the comment above)");
+}
+async function openAtOrigin(page: Page, origin: string, path = "/", who = "m-saurabh") {
+  await page.goto(`${origin}/`);
+  await page.evaluate((id) => { localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem("hh.me", id); localStorage.setItem("hh.me", id); }, who);
+  await page.goto(`${origin}${path}`);
+}
+const newer = (route: import("@playwright/test").Route) => route.fulfill({ json: NEWER, headers: { "access-control-allow-origin": "*" } });
+
+test("update: an old address offers to open the live one, on the same page", async ({ page }) => {
+  await needsStampedBuild(page);
+  await page.route(`${LIVE}/api/version`, newer);
+  await openAtOrigin(page, STALE, "/mortgage/scenarios");
+  const bar = page.getByRole("status").filter({ hasText: "older address of HomeHunt" });
+  await expect(bar).toBeVisible({ timeout: 15_000 });
+  await expect(bar).toContainText("export them from Settings first"); // local-mode data stays with the address
+  // "Later" hides it for this session.
+  await bar.getByRole("button", { name: "Later" }).click();
+  await expect(bar).toHaveCount(0);
+  await page.reload();
+  await page.waitForTimeout(3500);
+  await expect(page.getByRole("status").filter({ hasText: "older address of HomeHunt" })).toHaveCount(0);
+  // The manual check brings it back, and "Open the latest" goes to the live address, same page.
+  await page.goto(`${STALE}/settings`);
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("A newer version is ready. See the bar at the top.")).toBeVisible();
+  await page.evaluate(() => sessionStorage.removeItem("hh.update.dismissed"));
+  await page.reload();
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  const [nav] = await Promise.all([page.waitForURL(`${LIVE}/settings`, { timeout: 15_000 }).then(() => true).catch(() => false), page.getByRole("button", { name: "Open the latest" }).click()]);
+  expect(nav).toBe(true);
+});
+
+test("update: on the live address a newer build offers a reload, and it reloads", async ({ page }) => {
+  await needsStampedBuild(page);
+  await page.route(`${LIVE}/api/version`, newer);
+  await openAtOrigin(page, LIVE, "/");
+  const bar = page.getByRole("status").filter({ hasText: "A new version of HomeHunt is ready" });
+  await expect(bar).toBeVisible({ timeout: 15_000 });
+  await expect(bar).toContainText("Nothing you've saved is lost");
+  await page.unroute(`${LIVE}/api/version`);
+  await Promise.all([page.waitForEvent("load"), bar.getByRole("button", { name: "Reload" }).click()]);
+  await expect(page.getByRole("heading", { name: "Board", level: 1 })).toBeVisible();
+  await page.waitForTimeout(3500);
+  await expect(page.getByRole("status").filter({ hasText: "A new version of HomeHunt is ready" })).toHaveCount(0); // the live build is the one running
+});
+
+test("update: when this is the newest build there is no banner, and Check for updates says so", async ({ page }) => {
+  await needsStampedBuild(page);
+  await openAtOrigin(page, LIVE, "/settings");
+  await page.waitForTimeout(3500);
+  await expect(page.getByRole("status").filter({ hasText: /new version|older address/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("You're on the latest version.")).toBeVisible();
+});
+
+test("update: if the live address can't be reached nothing is shown", async ({ page }) => {
+  await needsStampedBuild(page);
+  await page.route(`${LIVE}/api/version`, (r) => r.abort());
+  await openAtOrigin(page, STALE, "/settings");
+  await page.getByRole("button", { name: "Check for updates" }).click();
+  await expect(page.getByText("Couldn't check. Are you online?")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /new version|older address/ })).toHaveCount(0);
+});

@@ -19,6 +19,7 @@ With no environment variables it runs in **local mode**: data lives in that one 
 | --- | --- |
 | Scoring, tiers, ranking, stamp duty (§6, §7, FR-S, FR-X1) | `packages/scoring`: pure functions, config-driven, golden test for the §6.7 worked example (75.5, 69.8, combined 72.6) |
 | Mortgage planner (mortgage PRD) | `packages/mortgage`: a pure month-by-month engine (initial and follow-on rate, four overpayment types, shorten-the-term or lower-the-payment, allowance and ERC check, LTV bands, scenario comparison), tested against every golden figure in the PRD. Screens under `/mortgage`: Calculator, Scenarios (compare up to 6, quick variants, our plan) and Overpayments. Scenarios and settings are shared by both of you (`0002_mortgage.sql`); our plan shows on each home's Costs tab, optionally on the board, and as a row on Compare |
+| Update checker | Every build knows its own version and the app's main address (Vercel's production domain, or `APP_CANONICAL_URL`). The app asks `/api/version` there when it opens, when you come back to it, and every 15 minutes. If a newer build exists it shows a bar: **Reload** on the live address, or **Open the latest** (same page) when you're on an old deployment address. Settings and the phone menu have **Check for updates** and show the build number |
 | PDF import | On the same page, **Upload a PDF** (an agent's brochure, or a listing page saved as PDF). The browser draws the first five pages and the last one as pictures and pulls out the printed text, then both go through the screenshot reader |
 | Agent contact | Each agent has a mobile, office phone and email. Call and Text open the phone's dialler and messages (mobile first), Email opens the mail app. Agent details read from a listing or PDF are pre-filled on the Add page for checking |
 | Screenshot import | `/api/extract-screenshots` + the Add page: paste or drop up to 6 listing screenshots; Claude (official SDK, structured output) reads the facts and finds the main photo, which is cropped out as the home's picture |
@@ -60,6 +61,8 @@ npm run build && npm run e2e   # browser journeys, laptop and phone
 ```
 
 ## Decisions and deviations to know about
+
+- **Old deployment addresses.** Every Vercel deployment keeps its own permanent address that never updates, and a phone that opens one keeps showing that old build. Builds from this one on notice and offer the newest. Anything older cannot, so open the live address once. In local mode (no Supabase) your homes live in the browser at the address you used, so moving addresses starts empty: export first.
 
 - **Mortgage tables need a second migration.** If you already ran `0001_init.sql`, also run `supabase/migrations/0002_mortgage.sql` once (safe to repeat). Until you do, the app still opens and the calculator works; saving a scenario shows a banner telling you to run it.
 - **The mortgage PRD contradicts itself in one place.** Section 10 says scenario C is lowest on monthly payment, total interest and total payable. By its own table (and by the engine) C is lowest on payment and total payable, but D (15% down over 25 years) has the lowest total interest: £460,837 against C's £468,964. The app follows the numbers, so D is marked best on interest.

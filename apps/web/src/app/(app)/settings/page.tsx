@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_CONFIG, totalWeight, type CriterionKey, type ScoringConfig } from "@homehunt/scoring";
 import { MortgageSettingsPanel } from "@/components/mortgage/SettingsPanel";
+import { CheckForUpdates } from "@/components/UpdateBanner";
 import { PageHeader, cx } from "@/components/ui";
 import { activeConfig } from "@/lib/derive";
 import { gbp, splitAddress } from "@/lib/format";
@@ -211,6 +212,7 @@ export default function SettingsPage() {
             </>
           )}
         </div>
+        <CheckForUpdates />
         <p className="m-0 text-[13px] text-muted">Scoring settings are on version {saved.version}. Older scores stay explainable because each version is kept.</p>
       </Panel>
 

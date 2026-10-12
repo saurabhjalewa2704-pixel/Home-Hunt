@@ -7,6 +7,7 @@ import { activeConfig } from "@/lib/derive";
 import { store, useStore } from "@/lib/store";
 import { IAgents, IBoard, ICompare, ILogo, IMortgage, IPlus, ISchedule, ISettings } from "./icons";
 import { Avatar, cx } from "./ui";
+import { CheckForUpdates, UpdateBanner, useUpdateWatcher } from "./UpdateBanner";
 
 const NAV = [
   { href: "/", label: "Board", icon: IBoard },
@@ -52,6 +53,7 @@ function PhoneBar({ path }: { path: string }) {
           <div className="mt-3 flex flex-col gap-3 border-t border-line px-3 pt-4">
             <div className="flex items-center gap-2.5"><Avatar member={me} size={30} /><span className="text-[15px] text-ink-2">{me?.display_name}</span><button className="ml-auto min-h-11 text-sm text-muted underline" onClick={() => void store.signOut()}>Switch person</button></div>
             <SyncBadge />
+            <CheckForUpdates />
             <span className="text-xs text-muted">Version {BUILD}</span>
           </div>
         </nav>
@@ -83,6 +85,7 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     void store.start();
   }, []);
+  useUpdateWatcher();
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       // When a newer version of the app takes over, load it once so an open app never keeps running old code.
@@ -133,6 +136,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
+      <UpdateBanner />
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:rounded focus:bg-surface focus:p-2">Skip to content</a>
       <aside className="sticky top-0 hidden h-dvh w-[240px] flex-none flex-col gap-7 border-r border-line px-5 py-7 md:flex">
         <Link href="/" className="flex items-center gap-2.5 px-3 text-ink no-underline">
