@@ -104,13 +104,13 @@ describe("scenarios, homes and our plan", () => {
     expect(stampDutyOf({ ...c, sdltOverride: 12_000 }, data)).toBe(12_000);
   });
   it("applies our plan to another home at the same deposit percentage, with that home's own stamp duty", () => {
-    const withPlan: Data = { ...data, mortgage_scenarios: [scenario()] };
+    const withPlan: Data = { ...data, mortgage_scenarios: [scenario({ id: "s1" })] };
     expect(preferredScenario(withPlan)!.id).toBe("s1");
     const m = planOnHome(withPlan, 800_000)!;
     expect(m.inputs.depositAmount).toBe(120_000);
     expect(m.inputs.stampDuty).toBe(30_000);
     expect(m.sim.loan).toBe(680_000);
-    expect(planOnHome(data, 800_000)).toBeNull();
+    expect(planOnHome(emptyData(), 800_000)).toBeNull(); // nothing starred yet
     expect(planOnHome(withPlan, 0)).toBeNull();
   });
   it("letters scenarios in the order they were made", () => {

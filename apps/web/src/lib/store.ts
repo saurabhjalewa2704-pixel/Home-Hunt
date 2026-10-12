@@ -470,10 +470,15 @@ class Store {
     input: Partial<MortgageScenario> & Pick<MortgageScenario, "name" | "deposit_amount" | "term_months" | "initial_rate">,
   ): Promise<MortgageScenario> {
     const d = this.state.data;
+    // Callers pass `id: undefined` to mean "a new one"; an undefined field must never overwrite a default.
+    input = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as typeof input;
     const existing = input.id ? d.mortgage_scenarios.find((x) => x.id === input.id) : null;
     if (!existing && d.mortgage_scenarios.length >= MAX_SCENARIOS) throw new Error(`You can keep up to ${MAX_SCENARIOS} scenarios. Delete one to make room.`);
     const settings = mortgageSettings(d);
     const t = nowIso();
+    // Letters follow the order scenarios were made, so a new one must always sort after the others.
+    const lastMade = d.mortgage_scenarios.reduce((m, x) => (x.created_at > m ? x.created_at : m), "");
+    const createdAt = lastMade && t <= lastMade ? new Date(new Date(lastMade).getTime() + 1).toISOString() : t;
     const used = new Set(d.mortgage_scenarios.map((x) => x.colour.toLowerCase()));
     const free = SCENARIO_COLOURS.find((c) => !used.has(c.light.toLowerCase())) ?? SCENARIO_COLOURS[d.mortgage_scenarios.length % SCENARIO_COLOURS.length];
     const row: MortgageScenario = {
@@ -493,7 +498,7 @@ class Store {
       // The first scenario becomes "our plan" so the property pages have something to show.
       is_preferred: !existing && d.mortgage_scenarios.length === 0,
       created_by: this.me,
-      created_at: t,
+      created_at: createdAt,
       ...existing,
       ...input,
       name: input.name.trim() || "Scenario",

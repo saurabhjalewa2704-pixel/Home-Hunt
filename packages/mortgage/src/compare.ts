@@ -53,8 +53,8 @@ const DEFS: Array<{ key: CompareKey; label: string; rank: "min" | "max" | null; 
   { key: "payable", label: "Total payable", rank: "min", get: (r) => r.sim.totals.payable },
   { key: "costOfBorrowing", label: "Total cost of borrowing", rank: "min", get: (r) => r.sim.totalCostOfBorrowing },
   { key: "cash", label: "Cash needed on day one", rank: "min", get: (r) => r.sim.cashNeeded },
-  { key: "endMonths", label: "Mortgage-free after", rank: "min", get: (r) => r.sim.totals.months },
-  { key: "overEndMonths", label: "With overpayments: mortgage-free after", rank: "min", get: (r) => (r.planSim ? r.planSim.totals.months : null) },
+  { key: "endMonths", label: "Mortgage-free by", rank: "min", get: (r) => r.sim.totals.months },
+  { key: "overEndMonths", label: "With overpayments: mortgage-free by", rank: "min", get: (r) => (r.planSim ? r.planSim.totals.months : null) },
   { key: "overInterestSaved", label: "With overpayments: interest saved", rank: "max", get: (r) => (r.planSim ? r.sim.totals.interest - r.planSim.totals.interest : null) },
 ];
 
@@ -62,7 +62,9 @@ const same = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
 /** Lay scenarios out in columns and measures in rows, marking the best value in each ranked row. */
 export function compareScenarios(items: ScenarioResult[]): CompareRow[] {
-  return DEFS.filter((d) => d.key !== "overEndMonths" && d.key !== "overInterestSaved" ? true : items.some((r) => r.planSim)).map((d) => {
+  const hasPlan = items.some((r) => r.planSim);
+  const hasFollowOn = items.some((r) => r.sim.paymentAfter !== null);
+  return DEFS.filter((d) => (d.key === "overEndMonths" || d.key === "overInterestSaved" ? hasPlan : d.key === "paymentAfter" ? hasFollowOn : true)).map((d) => {
     const values = items.map((r) => d.get(r));
     const known = values.filter((v): v is number => v !== null);
     const target = d.rank === null || !known.length ? null : d.rank === "min" ? Math.min(...known) : Math.max(...known);

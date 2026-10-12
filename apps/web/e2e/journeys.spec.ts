@@ -427,29 +427,32 @@ test("a deposit above the price is refused in plain words", async ({ page }) => 
 test("our plan drives the property page, the board line and the compare row; Mortgage is in the navigation", async ({ page }) => {
   await openAs(page, "m-saurabh", "/mortgage");
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Mortgage" })).toBeVisible();
+  const costs = async (street: RegExp) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: street }).first().click();
+    await page.getByRole("navigation", { name: "Property sections" }).getByRole("link", { name: "Costs" }).click();
+    return page.getByRole("region", { name: "Mortgage" });
+  };
 
-  // Before any scenario is saved, a home's Costs tab invites you to star one.
-  await page.goto("/");
-  await page.getByRole("link", { name: /Elsynge Road/ }).first().click();
-  await page.getByRole("navigation", { name: "Property sections" }).getByRole("link", { name: "Costs" }).click();
-  await expect(page.getByText(/Star a scenario as/)).toBeVisible();
-
-  // Pick the home in the calculator, save: the first scenario becomes "our plan".
-  await page.goto("/mortgage");
-  await page.getByLabel("Home from your board").selectOption({ label: "Elsynge Road, £695,000" });
-  await expect(page.getByTestId("monthly-payment")).toHaveText("£3,225.65");
-  await page.getByRole("button", { name: "Save as scenario" }).click();
-  await expect(page).toHaveURL(/\/mortgage\/scenarios/);
-
-  // Its terms now apply to every home, on that home's own price.
-  await page.goto("/");
-  await page.getByRole("link", { name: /Elsynge Road/ }).first().click();
-  await page.getByRole("navigation", { name: "Property sections" }).getByRole("link", { name: "Costs" }).click();
-  await expect(page.getByRole("region", { name: "Mortgage" }).getByText("£3,225.65")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Mortgage" }).getByText("£132,499")).toBeVisible();
+  // The sample scenario B is starred as "our plan": its terms apply to each home at that home's own price.
+  const elsynge = await costs(/Elsynge Road/);
+  await expect(elsynge.getByText("£3,225.65")).toBeVisible();
+  await expect(elsynge.getByText("£132,499")).toBeVisible();
+  const fircroft = await costs(/Fircroft Road/);
+  await expect(fircroft.getByText("£3,225.65")).toHaveCount(0);
+  await expect(fircroft.getByText(/£3,0\d\d\.\d\d/)).toBeVisible(); // £650,000 at 15% down
   await page.getByRole("link", { name: "Model this home" }).click();
   await expect(page.getByLabel("Home from your board")).toHaveValue(/.+/);
-  await expect(page.getByTestId("monthly-payment")).toHaveText("£3,225.65");
+  await expect(page.getByLabel("Price", { exact: true })).toHaveValue("650000");
+  await expect(page.getByText("15%, £97,500")).toBeVisible();
+
+  // Unstar it and the Costs tab invites you to star one.
+  await page.goto("/mortgage/scenarios");
+  await page.getByRole("button", { name: "Our plan. Unstar" }).click();
+  const none = await costs(/Elsynge Road/);
+  await expect(none.getByText(/Star a scenario as/)).toBeVisible();
+  await page.goto("/mortgage/scenarios");
+  await page.getByRole("button", { name: "Make B our plan" }).click();
 
   // The board line is off until switched on in Settings.
   await page.goto("/");
@@ -464,6 +467,71 @@ test("our plan drives the property page, the board line and the compare row; Mor
   // And the compare screen gets a monthly payment row.
   await page.goto("/compare");
   await expect(page.getByRole("rowheader", { name: "Monthly payment (our plan)" })).toBeVisible();
+});
+
+test("saving from the calculator makes the first scenario our plan", async ({ page }) => {
+  await openAs(page, "m-vedika", "/mortgage", { sample: false });
+  await page.getByRole("button", { name: "Save as scenario" }).click();
+  await expect(page).toHaveURL(/\/mortgage\/scenarios/);
+  await expect(page.locator(".mcard").filter({ hasText: "A. 15% down, 30 yrs, 5.15%" })).toBeVisible();
+  await expect(page.getByText("Our plan", { exact: true })).toBeVisible();
+});
+
+test("scenarios: compare the PRD's four, best value per row, quick variants, duplicate, delete, selection remembered", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage/scenarios");
+  await expect(page.getByRole("heading", { name: "Your scenarios" })).toBeVisible();
+  const table = page.getByRole("region", { name: "Side-by-side comparison" });
+  const row = (name: string) => table.getByRole("row").filter({ has: page.getByRole("rowheader", { name, exact: true }) });
+
+  // PRD section 7: C is cheapest each month and overall, D has the lowest interest, A needs least cash.
+  await expect(row("Monthly payment")).toContainText("£3,492.88");
+  await expect(row("Monthly payment").locator("td.best")).toContainText("£2,750.59");
+  await expect(row("Total interest").locator("td.best")).toContainText("£460,837");
+  await expect(row("Total payable").locator("td.best")).toContainText("£990,214");
+  await expect(row("Cash needed on day one").locator("td.best")).toContainText("£97,749");
+  await expect(row("Cash needed on day one")).toContainText("+£104,250");
+  await expect(row("Term").locator("td.best")).toContainText("25 years");
+  await expect(page.getByText("D costs £280 more a month than B but saves £109,647 of interest.")).toBeVisible();
+
+  // Untick two: the table follows, and it is remembered on reload.
+  await page.getByLabel("Compare A").uncheck();
+  await page.getByLabel("Compare C").uncheck();
+  await expect(table.getByRole("columnheader")).toHaveCount(2); // B and D
+  await page.reload();
+  await expect(page.getByLabel("Compare A")).not.toBeChecked();
+  await expect(page.getByLabel("Compare B")).toBeChecked();
+  await page.getByLabel("Compare A").check();
+  await page.getByLabel("Compare C").check();
+
+  // Quick variants: term 25, 30 and 35 from B. 30 is B's own value, so two new scenarios.
+  await page.getByRole("button", { name: "Quick variants" }).click();
+  await page.getByLabel("Start from").selectOption({ label: "B. Our plan: 15% down" });
+  await expect(page.getByLabel(/Values/)).toHaveValue("25, 30, 35");
+  await expect(page.getByText(/This makes 2 scenarios: 25 yrs, 35 yrs/)).toBeVisible();
+  await page.getByRole("button", { name: "Make 2 scenarios" }).click();
+  await expect(page.locator(".mcard").filter({ hasText: "E. 15% down, 25 yrs, 5.15%" })).toBeVisible();
+  await expect(page.locator(".mcard").filter({ hasText: "F. 15% down, 35 yrs, 5.15%" })).toBeVisible();
+
+  // Only six can be compared at once; a seventh scenario can exist but not be ticked.
+  for (const l of ["A", "B", "C", "D", "E", "F"]) await page.getByLabel(`Compare ${l}`).check();
+  await page.getByRole("button", { name: "Duplicate A" }).click();
+  await expect(page.locator(".mcard").filter({ hasText: "G. 10% down, 30 yrs, 5.35% copy" })).toBeVisible();
+  await page.getByLabel("Compare G").click();
+  await expect(page.getByText("You can compare up to 6 at a time. Untick one first.")).toBeVisible();
+  await expect(page.getByLabel("Compare G")).not.toBeChecked();
+
+  // Delete the copy.
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Delete G" }).click();
+  await expect(page.locator(".mcard").filter({ hasText: "G. 10% down, 30 yrs, 5.35% copy" })).toHaveCount(0);
+});
+
+test("the PRD's four scenarios can be exported as CSV", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage/scenarios");
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download as CSV" }).click()]);
+  const text = await (await import("node:fs/promises")).readFile((await dl.path())!, "utf8");
+  expect(text.split("\n")[0]).toContain("A. 10% down, 30 yrs, 5.35%");
+  expect(text).toContain("Monthly payment,3492.88,3225.65,2750.59,3505.29");
 });
 
 test("settings: the overpayment allowance and defaults feed new calculators", async ({ page }) => {

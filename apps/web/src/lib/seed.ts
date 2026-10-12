@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG } from "@homehunt/scoring";
-import { TABLES, type Agent, type Assessment, type Data, type Offer, type ProCon, type Property, type Proximity, type Status, type Viewing } from "./types";
+import { TABLES, type MortgageScenario, type Agent, type Assessment, type Data, type Offer, type ProCon, type Property, type Proximity, type Status, type Viewing } from "./types";
 
 export const HOUSEHOLD_ID = "h-demo";
 export const SAURABH = "m-saurabh";
@@ -259,5 +259,20 @@ export function sampleData(now = new Date()): Data {
   d.notes = [
     { id: "n-1", property_id: ids.elsynge, member_id: VEDIKA, text: "Ask about the service charge and when the roof was last done.", created_at: T },
   ];
+
+  // The four scenarios from the mortgage PRD's worked example, on Elsynge Road (£695,000). B is "our plan".
+  const sc = (n: number, letter: string, name: string, dep: number, years: number, rate: number, colour: string, plan = false): MortgageScenario => ({
+    id: `sc-${letter.toLowerCase()}`, household_id: HOUSEHOLD_ID, name, note: null, colour, property_id: ids.elsynge, price: null,
+    deposit_amount: Math.round(695_000 * dep / 100), term_months: years * 12, initial_rate: rate, initial_period_months: 60, follow_on_rate: null,
+    fee_amount: 999, fee_added_to_loan: false, other_costs: 2500, sdlt_override: null, completion_date: null, is_preferred: plan,
+    created_by: SAURABH, updated_by: SAURABH, created_at: new Date(now.getTime() + n * 1000).toISOString(), updated_at: T,
+  });
+  d.mortgage_scenarios = [
+    sc(1, "A", "10% down, 30 yrs, 5.35%", 10, 30, 5.35, "#9C3F7E"),
+    sc(2, "B", "Our plan: 15% down", 15, 30, 5.15, "#17805A", true),
+    sc(3, "C", "25% down, 30 yrs, 4.85%", 25, 30, 4.85, "#2F6FD0"),
+    sc(4, "D", "15% down, 25 years", 15, 25, 5.15, "#B07A00"),
+  ];
+
   return d;
 }

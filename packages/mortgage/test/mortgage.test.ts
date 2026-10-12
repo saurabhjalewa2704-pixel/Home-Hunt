@@ -331,6 +331,13 @@ describe("comparing scenarios", () => {
     expect(row("payment", rows).cells.every((c) => !c.best)).toBe(true);
     expect(row("payment", rows).cells.every((c) => c.diff === 0)).toBe(true);
   });
+  it("the 'after initial period' row appears only when a rate change makes it differ", () => {
+    expect(compareScenarios(items).some((r) => r.key === "paymentAfter")).toBe(false);
+    const rows = compareScenarios([mk("b", "B", B), mk("x", "X", inputs(15, 30, 5.15, { followOnRate: 7.24 }))]);
+    const r = rows.find((q) => q.key === "paymentAfter")!;
+    expect(r.cells.map((c) => Math.round(c.value!))).toEqual([3226, 3926]);
+    expect(r.cells.map((c) => c.best)).toEqual([true, false]);
+  });
   it("overpayment rows appear only when a scenario has a plan", () => {
     expect(compareScenarios(items).some((r) => r.key === "overInterestSaved")).toBe(false);
     const withPlan = [mk("b", "B", B, plan({ type: "annual_amount", amount: 10_000 })), mk("d", "D", inputs(15, 25, 5.15), plan({ type: "annual_amount", amount: 5_000 })), mk("a", "A", inputs(10, 30, 5.35))];
