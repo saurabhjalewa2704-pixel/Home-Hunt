@@ -1,23 +1,51 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { gbp } from "@/lib/format";
 import { activeConfig } from "@/lib/derive";
 import { store, useStore } from "@/lib/store";
-import { IAgents, IBoard, ICompare, ILogo, IPlus, ISchedule, ISettings } from "./icons";
+import { IAgents, IBoard, ICompare, ILogo, IMortgage, IPlus, ISchedule, ISettings } from "./icons";
 import { Avatar, cx } from "./ui";
 
 const NAV = [
   { href: "/", label: "Board", icon: IBoard },
   { href: "/schedule", label: "Schedule", icon: ISchedule },
   { href: "/compare", label: "Compare", icon: ICompare },
+  { href: "/mortgage", label: "Mortgage", icon: IMortgage },
   { href: "/agents", label: "Agents", icon: IAgents },
   { href: "/settings", label: "Settings", icon: ISettings },
 ];
 
 function isOn(path: string, href: string) {
   return href === "/" ? path === "/" || path.startsWith("/property") : path.startsWith(href);
+}
+
+/** Phones: Settings and Agents live in the profile menu so the tab bar can carry Mortgage. */
+function PhoneBar({ path }: { path: string }) {
+  const s = useStore();
+  const [open, setOpen] = useState(false);
+  const me = s.data.members.find((m) => m.id === s.me);
+  useEffect(() => setOpen(false), [path]);
+  return (
+    <header data-phonebar className="sticky top-0 z-30 flex min-h-12 items-center justify-between gap-3 border-b border-line bg-bg px-4 md:hidden">
+      <Link href="/" className="flex items-center gap-2 text-ink no-underline"><ILogo /><span className="text-[17px] font-extrabold tracking-[-0.02em]">HomeHunt</span></Link>
+      <div className="relative">
+        <button className="flex min-h-11 items-center gap-2 rounded-full pl-1 pr-3 text-sm font-semibold" aria-expanded={open} aria-haspopup="menu" aria-label="Profile menu" onClick={() => setOpen((v) => !v)}>
+          <Avatar member={me} size={28} />{me?.display_name}
+        </button>
+        {open && (
+          <div role="menu" className="panel absolute top-12 right-0 z-40 flex w-56 flex-col gap-0.5 p-2 shadow-lg">
+            <Link role="menuitem" href="/settings" className="nav"><ISettings />Settings</Link>
+            <Link role="menuitem" href="/agents" className="nav"><IAgents />Agents</Link>
+            <div className="my-1 border-t border-line-2" />
+            <div className="px-3 py-1.5"><SyncBadge /></div>
+            <button role="menuitem" className="nav w-full text-left" onClick={() => void store.signOut()}>Switch person</button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
 }
 
 export function SyncBadge({ className }: { className?: string }) {
@@ -114,6 +142,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      {!fullscreen && <PhoneBar path={path} />}
       <main id="main" className={cx("min-w-0 flex-1", fullscreen ? "" : "pb-[104px] md:pb-16")}>{children}</main>
 
       {!fullscreen && (
@@ -122,7 +151,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link href="/schedule" aria-current={isOn(path, "/schedule") ? "page" : undefined}><ISchedule />Schedule</Link>
           <Link href="/add" aria-label="Add a home" className="!min-h-14 !flex-none !w-14 mx-1.5 rounded-2xl" style={{ background: "var(--accent)", color: "var(--on-accent)" }}><IPlus width={24} height={24} /></Link>
           <Link href="/compare" aria-current={isOn(path, "/compare") ? "page" : undefined}><ICompare />Compare</Link>
-          <Link href="/settings" aria-current={isOn(path, "/settings") ? "page" : undefined}><ISettings />Settings</Link>
+          <Link href="/mortgage" aria-current={isOn(path, "/mortgage") ? "page" : undefined}><IMortgage />Mortgage</Link>
         </nav>
       )}
       {s.error && (

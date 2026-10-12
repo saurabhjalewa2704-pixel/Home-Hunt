@@ -211,6 +211,64 @@ export interface Household {
   created_at: string;
 }
 
+/** A named, saved set of calculator inputs shared by the household (mortgage PRD section 4). */
+export interface MortgageScenario {
+  id: string;
+  household_id: string;
+  name: string;
+  note: string | null;
+  /** One of the scenario palette colours (light-theme hex); see lib/mortgage.ts. */
+  colour: string;
+  property_id: string | null;
+  /** Price typed on the scenario. Null with a property means "follow that home's price". */
+  price: number | null;
+  deposit_amount: number;
+  term_months: number;
+  initial_rate: number;
+  initial_period_months: number;
+  /** Null means the same as the initial rate. */
+  follow_on_rate: number | null;
+  fee_amount: number;
+  fee_added_to_loan: boolean;
+  other_costs: number;
+  sdlt_override: number | null;
+  completion_date: string | null;
+  is_preferred: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OverpaymentPlanRow {
+  id: string;
+  scenario_id: string;
+  type: "annual_amount" | "annual_percent" | "monthly_amount" | "lump_sum";
+  amount: number | null;
+  percent: number | null;
+  start_month: number;
+  end_month: number | null;
+  annual_increase_pct: number;
+  mode: "shorten_term" | "lower_payment";
+  lump_sum_month: number | null;
+}
+
+/** One row per household. */
+export interface MortgageSettings {
+  id: string;
+  household_id: string;
+  allowance_pct: number;
+  erc_pct: number | null;
+  default_term_months: number;
+  default_initial_period_months: number;
+  default_fee: number;
+  default_other_costs: number;
+  ltv_rate_presets: Array<{ ltv: number; rate: number }>;
+  income_multiple: number;
+  combined_income: number | null;
+  show_monthly_on_board: boolean;
+}
+
 export interface Data {
   household: Household;
   members: Member[];
@@ -226,6 +284,9 @@ export interface Data {
   notes: Note[];
   photos: Photo[];
   score_snapshots: ScoreSnapshot[];
+  mortgage_scenarios: MortgageScenario[];
+  overpayment_plans: OverpaymentPlanRow[];
+  mortgage_settings: MortgageSettings[];
 }
 
 export type TableName = Exclude<keyof Data, "household">;
@@ -243,6 +304,12 @@ export const TABLES: TableName[] = [
   "notes",
   "photos",
   "score_snapshots",
+  "mortgage_scenarios",
+  "overpayment_plans",
+  "mortgage_settings",
 ];
+
+/** Tables added after the first release. A database that predates them still loads; these just start empty. */
+export const OPTIONAL_TABLES: TableName[] = ["mortgage_scenarios", "overpayment_plans", "mortgage_settings"];
 
 export type RowOf<T extends TableName> = Data[T][number];

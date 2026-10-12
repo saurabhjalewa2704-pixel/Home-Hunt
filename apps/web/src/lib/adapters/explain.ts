@@ -1,3 +1,20 @@
+/** True when the error says a table doesn't exist. */
+export function isMissingTable(e: unknown): boolean {
+  const o = (e && typeof e === "object" ? e : {}) as { message?: unknown; code?: unknown };
+  const msg = typeof o.message === "string" ? o.message : "";
+  return o.code === "42P01" || o.code === "PGRST205" || /could not find the table|relation .* does not exist|schema cache/i.test(msg);
+}
+
+/** What to say when a save fails. A missing mortgage table gets its own instruction. */
+export function explainWriteError(e: unknown, table?: string): string {
+  if (isMissingTable(e) && table && /^(mortgage_|overpayment_)/.test(table)) {
+    return "The mortgage tables don't exist in your database yet. Run supabase/migrations/0002_mortgage.sql in the Supabase SQL editor, then reload.";
+  }
+  if (e instanceof Error && e.message) return e.message;
+  const msg = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : "";
+  return msg ? `Couldn't save: ${msg}` : "Couldn't save";
+}
+
 /**
  * Turn whatever a failed load threw into a plain sentence saying what to do.
  * Supabase errors are plain objects ({ message, code, status }), not Error instances.

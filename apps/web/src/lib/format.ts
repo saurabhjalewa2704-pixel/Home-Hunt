@@ -62,3 +62,14 @@ export const isEmail = (s: string | null | undefined) => !!s && /^[^\s@]+@[^\s@]
 
 /** UK mobiles start 07 or +44 7; used to file a single number under Mobile rather than Office phone. */
 export const looksLikeMobile = (raw: string | null | undefined) => /^(\+447|07|00447)\d{9}$/.test(telHref(raw) ?? "");
+
+/** £3,225.65: pounds and pence, for a monthly payment. */
+export const gbp2 = (n: number | null | undefined) => (n == null ? "–" : "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+/** £591k: for tight spaces and chart axes. */
+export const gbpK = (n: number) => (Math.abs(n) >= 1_000_000 ? "£" + (n / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "m" : "£" + Math.round(n / 1000).toLocaleString("en-GB") + "k");
+/** 19 years 4 months. */
+export const yrsMos = (months: number) => {
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return [y ? plural(y, "year") : "", m ? plural(m, "month") : ""].filter(Boolean).join(" ") || "0 months";
+};

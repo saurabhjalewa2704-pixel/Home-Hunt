@@ -87,3 +87,21 @@ export const IHouse = ({ w = 120, h = 84 }: { w?: number; h?: number }) => (
 export const IShot = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p, 22)} viewBox="0 0 22 22"><rect x="3" y="5" width="16" height="12" rx="2" /><path d="M7 5l1-2h6l1 2M11 11m-3 0a3 3 0 106 0 3 3 0 10-6 0" /></svg>
 );
+export const IMortgage = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M3 9.5L10 4l7 5.5" /><path d="M5 8.5V16h10V8.5" /><path d="M11.8 10.2c-.4-.5-1-.7-1.6-.6-.8.1-1.2.7-1.2 1.4V14M8 12h2.6M8 14h4" /></svg>
+);
+export const IStar = ({ filled, ...p }: SVGProps<SVGSVGElement> & { filled?: boolean }) => (
+  <svg {...base(p, 18)} fill={filled ? "currentColor" : "none"}><path d="M10 2.8l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 8.1l5-.7z" /></svg>
+);
+export const IDuplicate = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p, 18)}><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M13 4H5a1 1 0 00-1 1v8" /></svg>
+);
+export const IPencil = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p, 18)}><path d="M4 16l1-4 8-8 3 3-8 8z" /></svg>
+);
+export const ITrash = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p, 18)}><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10" /></svg>
+);
+export const IProfile = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="10" cy="7" r="3.5" /><path d="M3.5 17c1-3.2 3.4-4.8 6.5-4.8s5.5 1.6 6.5 4.8" /></svg>
+);

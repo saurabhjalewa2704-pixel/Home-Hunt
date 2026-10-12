@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const config = {
-  transpilePackages: ["@homehunt/scoring", "@homehunt/importers", "@homehunt/geo"],
+  transpilePackages: ["@homehunt/scoring", "@homehunt/importers", "@homehunt/geo", "@homehunt/mortgage"],
   poweredByHeader: false,
   // pdfjs-dist can optionally use a native canvas on the server; the browser build never needs it.
   webpack(config) {

@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idb, outbox } from "../offline";
 import { clearPersona, getPersona } from "../persona";
-import { explainLoadError, looksOffline } from "./explain";
+import { explainLoadError, isMissingTable, looksOffline } from "./explain";
+import { normaliseData } from "../seed";
 import { supabaseBrowser } from "../supabase";
 import type { Data, RowOf, TableName } from "../types";
-import { TABLES } from "../types";
+import { OPTIONAL_TABLES, TABLES } from "../types";
 import type { Adapter, SyncState } from "./types";
 
 const CACHE_KEY = "data";
@@ -19,6 +20,8 @@ export class SupabaseAdapter implements Adapter {
   private sb: SupabaseClient = supabaseBrowser();
   private data!: Data;
   private count = 0;
+  /** Optional tables the database doesn't have yet (the mortgage migration hasn't been run). */
+  private missing = new Set<TableName>();
   private flushing = false;
   private syncListeners = new Set<(s: SyncState) => void>();
   private listeners = new Set<Parameters<Adapter["subscribe"]>[0]>();
@@ -37,7 +40,7 @@ export class SupabaseAdapter implements Adapter {
       // database or key problem must be shown, not hidden behind "you're offline".
       const cached = looksOffline(e) ? await idb.get<Data>("cache", CACHE_KEY).catch(() => undefined) : undefined;
       if (!cached) throw new Error(explainLoadError(e));
-      data = cached;
+      data = normaliseData(cached);
       this.emit("offline");
     }
     this.data = data;
@@ -60,7 +63,15 @@ export class SupabaseAdapter implements Adapter {
     const out: Record<string, unknown> = { household: h.data ?? { id: "", name: "", created_at: "" } };
     TABLES.forEach((t, i) => {
       const r = rest[i];
-      if (r.error) throw r.error;
+      if (r.error) {
+        // A database set up before the mortgage planner still works; those tables just start empty.
+        if (OPTIONAL_TABLES.includes(t) && isMissingTable(r.error)) {
+          this.missing.add(t);
+          out[t] = [];
+          return;
+        }
+        throw r.error;
+      }
       out[t] = r.data ?? [];
     });
     return out as unknown as Data;
@@ -69,6 +80,7 @@ export class SupabaseAdapter implements Adapter {
   private listenRealtime() {
     const ch = this.sb.channel("homehunt");
     for (const t of TABLES) {
+      if (this.missing.has(t)) continue;
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, (p) => {
         const ev = p.eventType === "DELETE" ? "delete" : "upsert";
         const row = (ev === "delete" ? p.old : p.new) as { id: string };
@@ -132,6 +144,10 @@ export class SupabaseAdapter implements Adapter {
     } finally {
       this.flushing = false;
     }
+  }
+
+  missingTables(): TableName[] {
+    return [...this.missing];
   }
 
   async upsert<T extends TableName>(table: T, row: RowOf<T>) {

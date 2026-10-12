@@ -1,4 +1,4 @@
-import { emptyData } from "../seed";
+import { emptyData, normaliseData } from "../seed";
 import { clearPersona, getPersona, setPersona } from "../persona";
 import type { Data, RowOf, TableName } from "../types";
 import { TABLES } from "../types";
@@ -23,7 +23,7 @@ export class LocalAdapter implements Adapter {
     let data: Data | null = null;
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) data = JSON.parse(raw) as Data;
+      if (raw) data = normaliseData(JSON.parse(raw) as Data);
     } catch {
       /* corrupted or unavailable: start fresh */
     }
@@ -53,7 +53,7 @@ export class LocalAdapter implements Adapter {
   private onStorage = (e: StorageEvent) => {
     if (e.key !== KEY || !e.newValue || this.suppress) return;
     try {
-      const next = JSON.parse(e.newValue) as Data;
+      const next = normaliseData(JSON.parse(e.newValue) as Data);
       for (const t of TABLES) {
         const before = new Map((this.data[t] as Array<{ id: string }>).map((r) => [r.id, JSON.stringify(r)]));
         for (const row of next[t] as Array<{ id: string }>) {

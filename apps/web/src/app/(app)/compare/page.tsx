@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { ICheck } from "@/components/icons";
 import { Cover, EmptyState, PageHeader, ScoreRing } from "@/components/ui";
 import { TIER_COLOR, TIER_LABELS, deriveAll, visibleFor, type Derived } from "@/lib/derive";
-import { gbp, oneDp, splitAddress } from "@/lib/format";
+import { gbp, gbp2, oneDp, splitAddress } from "@/lib/format";
+import { planOnHome, preferredScenario } from "@/lib/mortgage";
 import { useStore } from "@/lib/store";
 import type { Data } from "@/lib/types";
 
@@ -46,6 +47,9 @@ export default function ComparePage() {
   const rows: Row[] = [
     { label: "Price", best: "min", cell: (d) => ({ text: gbp(d.result.effectivePrice), value: d.result.effectivePrice }) },
     { label: "Stamp duty estimate", best: "min", cell: (d) => ({ text: gbp(d.stampDuty), value: d.stampDuty }) },
+    ...(preferredScenario(s.data)
+      ? ([{ label: "Monthly payment (our plan)", best: "min", cell: (d: Derived) => { const m = planOnHome(s.data, d.result.effectivePrice); return { text: m ? gbp2(m.sim.payment) : "–", value: m ? m.sim.payment : null }; } }] as Row[])
+      : []),
     { label: "Floor area", best: "max", cell: (d) => ({ text: d.property.floor_area_sqft ? `${Math.round(d.property.floor_area_sqft).toLocaleString("en-GB")} sq ft` : "–", value: d.property.floor_area_sqft }) },
     { label: "Bedrooms and bathrooms", cell: (d) => ({ text: `${d.property.beds ?? "?"} bed, ${d.property.baths ?? "?"} bath`, value: null }) },
     { label: "Station walk", best: "min", cell: prox("station") },

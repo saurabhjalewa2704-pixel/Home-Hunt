@@ -369,3 +369,110 @@ test("agents: add a mobile, office phone and email, with Call, Text and Email li
   await expect(tom.getByText("No phone number or email saved yet.")).toBeVisible();
   await expect(tom.getByRole("link", { name: /^Call/ })).toHaveCount(0);
 });
+
+// ---- Mortgage planner ----
+
+test("mortgage calculator: PRD worked example, typed rate, synced deposit, and errors keep the last result", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage", { sample: false });
+  const pay = page.getByTestId("monthly-payment");
+  // £695,000, 15% down, 30 years at 5.15%: the PRD's scenario B.
+  await expect(pay).toHaveText("£3,225.65");
+    await expect(page.getByText("£570,484", { exact: true }).locator("visible=true")).toBeVisible();
+  await expect(page.getByText("£1,161,234", { exact: true }).locator("visible=true")).toBeVisible();
+  await expect(page.getByText("£132,499", { exact: true }).locator("visible=true")).toBeVisible(); // cash needed on day one
+  await expect(page.getByText("Estimates only. Confirm with a mortgage adviser.").first()).toBeVisible();
+
+  // Deposit pounds and percent stay in sync; editing the price keeps the percent.
+  await page.getByLabel("Deposit (%)").fill("10");
+  await expect(page.getByLabel("Deposit (£)")).toHaveValue("69500");
+  await expect(page.getByText("90% loan-to-value, 90% band")).toBeVisible();
+  await expect(page.getByText("£34,750 more deposit gets you to the 85% band")).toBeVisible();
+  await page.getByLabel("Price", { exact: true }).fill("600000");
+  await expect(page.getByLabel("Deposit (£)")).toHaveValue("60000");
+  await page.getByLabel("Price", { exact: true }).fill("695000");
+  await page.getByLabel("Deposit (%)").fill("15");
+  await expect(pay).toHaveText("£3,225.65");
+
+  // Typed rate: 4.89 moves the slider and the payment; 9.25 is kept while the slider rests at 8.
+  await page.getByLabel("Interest rate", { exact: true }).fill("4.89");
+  await expect(page.getByLabel("Interest rate slider")).toHaveValue("4.9");
+  await expect(pay).not.toHaveText("£3,225.65");
+  await page.getByLabel("Interest rate", { exact: true }).fill("9.25");
+  await expect(page.getByLabel("Interest rate", { exact: true })).toHaveValue("9.25");
+  await expect(page.getByLabel("Interest rate slider")).toHaveValue("8");
+  await expect(page.getByText("Your rate is outside the slider's range, which is fine.")).toBeVisible();
+  const at925 = await pay.textContent();
+
+  // Blank is an error under the field, and the last valid result stays on screen.
+  await page.getByLabel("Interest rate", { exact: true }).fill("");
+  await expect(page.getByText("Enter a rate between 0.01% and 15%.")).toBeVisible();
+  await expect(pay).toHaveText(at925!);
+  await expect(page.getByText("Showing your last valid result")).toBeVisible();
+
+  // A higher rate after the fix shows what not remortgaging costs: £3,925.84 from year 6 (PRD section 6).
+  await page.getByLabel("Interest rate", { exact: true }).fill("5.15");
+  await expect(pay).toHaveText("£3,225.65");
+  await page.getByLabel("After the fix, assume we remortgage at the same rate").uncheck();
+  await page.getByLabel("Rate after the fix", { exact: true }).fill("7.24");
+  await expect(page.getByText("Rising to £3,925.84 a month after year 5 if you don't remortgage")).toBeVisible();
+});
+
+test("a deposit above the price is refused in plain words", async ({ page }) => {
+  await openAs(page, "m-vedika", "/mortgage", { sample: false });
+  await page.getByLabel("Deposit (£)").fill("900000");
+  await expect(page.getByText("Your deposit can't be more than the price.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save as scenario" })).toBeDisabled();
+});
+
+test("our plan drives the property page, the board line and the compare row; Mortgage is in the navigation", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage");
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Mortgage" })).toBeVisible();
+
+  // Before any scenario is saved, a home's Costs tab invites you to star one.
+  await page.goto("/");
+  await page.getByRole("link", { name: /Elsynge Road/ }).first().click();
+  await page.getByRole("navigation", { name: "Property sections" }).getByRole("link", { name: "Costs" }).click();
+  await expect(page.getByText(/Star a scenario as/)).toBeVisible();
+
+  // Pick the home in the calculator, save: the first scenario becomes "our plan".
+  await page.goto("/mortgage");
+  await page.getByLabel("Home from your board").selectOption({ label: "Elsynge Road, £695,000" });
+  await expect(page.getByTestId("monthly-payment")).toHaveText("£3,225.65");
+  await page.getByRole("button", { name: "Save as scenario" }).click();
+  await expect(page).toHaveURL(/\/mortgage\/scenarios/);
+
+  // Its terms now apply to every home, on that home's own price.
+  await page.goto("/");
+  await page.getByRole("link", { name: /Elsynge Road/ }).first().click();
+  await page.getByRole("navigation", { name: "Property sections" }).getByRole("link", { name: "Costs" }).click();
+  await expect(page.getByRole("region", { name: "Mortgage" }).getByText("£3,225.65")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Mortgage" }).getByText("£132,499")).toBeVisible();
+  await page.getByRole("link", { name: "Model this home" }).click();
+  await expect(page.getByLabel("Home from your board")).toHaveValue(/.+/);
+  await expect(page.getByTestId("monthly-payment")).toHaveText("£3,225.65");
+
+  // The board line is off until switched on in Settings.
+  await page.goto("/");
+  await expect(page.getByText(/a month$/)).toHaveCount(0);
+  await page.goto("/settings");
+  await page.getByLabel(/Show each home's monthly payment on the board/).check();
+  await page.getByRole("button", { name: "Save mortgage settings" }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByText(/about £[\d,]+ a month/).locator("visible=true").first()).toBeVisible();
+
+  // And the compare screen gets a monthly payment row.
+  await page.goto("/compare");
+  await expect(page.getByRole("rowheader", { name: "Monthly payment (our plan)" })).toBeVisible();
+});
+
+test("settings: the overpayment allowance and defaults feed new calculators", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/settings", { sample: false });
+  await page.getByLabel("Default term").fill("25");
+  await page.getByLabel("Arrangement fee", { exact: true }).fill("1499");
+  await page.getByRole("button", { name: "Save mortgage settings" }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
+  await page.goto("/mortgage");
+  await expect(page.getByLabel("Years", { exact: true })).toHaveValue("25");
+  await expect(page.getByLabel("Arrangement fee", { exact: true })).toHaveValue("1499");
+});

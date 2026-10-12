@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG } from "@homehunt/scoring";
-import type { Agent, Assessment, Data, Offer, ProCon, Property, Proximity, Status, Viewing } from "./types";
+import { TABLES, type Agent, type Assessment, type Data, type Offer, type ProCon, type Property, type Proximity, type Status, type Viewing } from "./types";
 
 export const HOUSEHOLD_ID = "h-demo";
 export const SAURABH = "m-saurabh";
@@ -25,7 +25,17 @@ export function emptyData(): Data {
     notes: [],
     photos: [],
     score_snapshots: [],
+    mortgage_scenarios: [],
+    overpayment_plans: [],
+    mortgage_settings: [],
   };
+}
+
+/** Fill in any table a saved copy predates, so data saved by an older version still loads. */
+export function normaliseData(d: Data): Data {
+  const out = { ...d } as Record<string, unknown>;
+  for (const t of TABLES) if (!Array.isArray(out[t])) out[t] = [];
+  return out as unknown as Data;
 }
 
 /** The next Saturday at or after `from` (today counts), at the given local time. */

@@ -51,6 +51,12 @@
   --dark-card-2: #2a3743;
   --dark-card-fg: #ffffff;
   --dark-card-muted: #b7c2cc;
+  --sc-0: #9c3f7e;
+  --sc-1: #17805a;
+  --sc-2: #2f6fd0;
+  --sc-3: #b07a00;
+  --sc-4: #6a5acd;
+  --sc-5: #d2582b;
 }
 
 :root[data-theme="dark"] {
@@ -90,6 +96,12 @@
   --dark-card-2: #c9d3cc;
   --dark-card-fg: #0f1613;
   --dark-card-muted: #33423a;
+  --sc-0: #b65398;
+  --sc-1: #2aa070;
+  --sc-2: #4682e6;
+  --sc-3: #bc8a0e;
+  --sc-4: #8473e4;
+  --sc-5: #db6538;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -130,6 +142,12 @@
     --dark-card-2: #c9d3cc;
     --dark-card-fg: #0f1613;
     --dark-card-muted: #33423a;
+    --sc-0: #b65398;
+    --sc-1: #2aa070;
+    --sc-2: #4682e6;
+    --sc-3: #bc8a0e;
+    --sc-4: #8473e4;
+    --sc-5: #db6538;
   }
 }
 
@@ -219,4 +237,42 @@ table.cmp td.best { background: var(--accent-soft); font-weight: 700; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .tnum, .lane-v, .num { font-variant-numeric: tabular-nums; }
+
+/* Mortgage planner */
+.mtab { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; margin-right: 24px; font-size: 15px; font-weight: 500; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+.mtab:hover { color: var(--ink); }
+.mtab[aria-current="page"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+.mrng { width: 100%; accent-color: var(--accent); height: 28px; margin: 0; }
+.mseg { display: grid; gap: 4px; padding: 4px; border-radius: 12px; background: var(--line-2); }
+.mseg button { min-height: 40px; border: 0; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.mseg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.mnum { display: inline-flex; align-items: center; gap: 4px; flex: none; width: 118px; min-height: 48px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--field-border); background: var(--surface); font-size: 18px; font-weight: 700; }
+.mnum:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mnum input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; color: var(--ink); padding: 0; }
+.mnum-bad { border-color: var(--danger); }
+.mstat { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-2); }
+.mstat-l { font-size: 13px; color: var(--muted); }
+.mstat-v { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.mgrp { display: flex; flex-direction: column; gap: 16px; padding: 20px 22px; border-top: 1px solid var(--line-2); }
+.mgrp:first-child { border-top: 0; }
+.mcard { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+.mic { width: 40px; height: 40px; border-radius: 8px; border: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); cursor: pointer; }
+.mic:hover { background: var(--line-2); color: var(--ink); }
+.res-card { background: var(--dark-card); color: var(--dark-card-fg); }
+.res-card .res-muted { color: var(--dark-card-muted); }
+table.mcmp { width: 100%; border-collapse: collapse; min-width: 640px; }
+table.mcmp th, table.mcmp td { padding: 12px 16px; text-align: left; vertical-align: top; border-top: 1px solid var(--line-2); font-size: 15px; }
+table.mcmp tbody th { font-size: 14px; font-weight: 600; color: var(--muted); width: 200px; }
+table.mcmp td.best { background: var(--accent-soft); }
+table.mcmp .sub { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+table.mnum-t { width: 100%; border-collapse: collapse; }
+table.mnum-t th, table.mnum-t td { padding: 10px 14px; text-align: right; font-size: 14px; border-top: 1px solid var(--line-2); font-variant-numeric: tabular-nums; }
+table.mnum-t th:first-child, table.mnum-t td:first-child { text-align: left; }
+table.mnum-t thead th { font-size: 12.5px; font-weight: 600; color: var(--muted); border-top: 0; }
+.mrow-warn { background: var(--amber-bg); }
+@media print {
+  aside, .tabbar, .no-print, [data-phonebar] { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; }
+  .panel, .mcard { break-inside: avoid; }
+}
 }

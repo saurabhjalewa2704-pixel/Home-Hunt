@@ -1,7 +1,10 @@
 "use client";
 import { useSyncExternalStore } from "react";
 import { DEFAULT_CONFIG, type CriterionKey, type ScoringConfig } from "@homehunt/scoring";
+import { suggestName, variantsOf, type OverpaymentPlan, type VariantField } from "@homehunt/mortgage";
+import { DEFAULT_SETTINGS, MAX_SCENARIOS, SCENARIO_COLOURS, inputsOf, mortgageSettings, priceOf } from "./mortgage";
 import { LocalAdapter } from "./adapters/local";
+import { explainWriteError } from "./adapters/explain";
 import { setPersona } from "./persona";
 import { SupabaseAdapter } from "./adapters/supabase";
 import type { Adapter, SyncState } from "./adapters/types";
@@ -14,6 +17,8 @@ import {
   type Agent,
   type Assessment,
   type Data,
+  type MortgageScenario,
+  type MortgageSettings,
   type Note,
   type Offer,
   type Photo,
@@ -36,6 +41,8 @@ export interface StoreState {
   sync: SyncState;
   pending: number;
   error: string | null;
+  /** Tables the database lacks because a migration hasn't been run, for example the mortgage tables. */
+  missingTables: TableName[];
   /** Bumps on every change so memoised selectors can key off it. */
   rev: number;
 }
@@ -51,6 +58,7 @@ class Store {
     sync: "saved-local",
     pending: 0,
     error: null,
+    missingTables: [],
     rev: 0,
   };
   private listeners = new Set<() => void>();
@@ -78,6 +86,7 @@ class Store {
       const res = await this.adapter.init();
       this.adapter.onSync((sync) => this.set({ sync, pending: this.adapter!.pending() }));
       this.adapter.subscribe((table, ev, row) => this.applyRemote(table, ev, row));
+      this.set({ missingTables: this.adapter.missingTables?.() ?? [] });
       if (!res.me) return this.set({ data: res.data, status: "choose" });
       this.set({ data: res.data, me: res.me, status: "ready" });
     } catch (e) {
@@ -121,7 +130,7 @@ class Store {
     try {
       await this.adapter!.upsert(table, row);
     } catch (e) {
-      this.set({ error: e instanceof Error ? e.message : "Couldn't save" });
+      this.set({ error: explainWriteError(e, table) });
       throw e;
     }
     this.queueSnapshot();
@@ -253,6 +262,8 @@ class Store {
 
   async hardDelete(id: string) {
     const d = this.state.data;
+    // Scenarios that followed this home's price keep that price rather than becoming £0.
+    for (const sc of d.mortgage_scenarios) if (sc.property_id === id) await this.put("mortgage_scenarios", { ...sc, property_id: null, price: priceOf(d, sc), updated_at: nowIso() });
     for (const t of ["viewings", "assessments", "pro_cons", "proximity", "offers", "notes", "photos", "status_events", "score_snapshots"] as const) {
       for (const r of d[t] as Array<{ id: string; property_id: string }>) if (r.property_id === id) await this.del(t, r.id);
     }
@@ -452,6 +463,122 @@ class Store {
   async renameMember(id: string, display_name: string) {
     const m = this.state.data.members.find((x) => x.id === id);
     if (m) await this.put("members", { ...m, display_name });
+  }
+
+  // ---- Mortgage planner (shared by both buyers) ----
+  async saveScenario(
+    input: Partial<MortgageScenario> & Pick<MortgageScenario, "name" | "deposit_amount" | "term_months" | "initial_rate">,
+  ): Promise<MortgageScenario> {
+    const d = this.state.data;
+    const existing = input.id ? d.mortgage_scenarios.find((x) => x.id === input.id) : null;
+    if (!existing && d.mortgage_scenarios.length >= MAX_SCENARIOS) throw new Error(`You can keep up to ${MAX_SCENARIOS} scenarios. Delete one to make room.`);
+    const settings = mortgageSettings(d);
+    const t = nowIso();
+    const used = new Set(d.mortgage_scenarios.map((x) => x.colour.toLowerCase()));
+    const free = SCENARIO_COLOURS.find((c) => !used.has(c.light.toLowerCase())) ?? SCENARIO_COLOURS[d.mortgage_scenarios.length % SCENARIO_COLOURS.length];
+    const row: MortgageScenario = {
+      id: uid(),
+      household_id: this.hid,
+      note: null,
+      colour: free.light,
+      property_id: null,
+      price: null,
+      initial_period_months: settings.default_initial_period_months,
+      follow_on_rate: null,
+      fee_amount: settings.default_fee,
+      fee_added_to_loan: false,
+      other_costs: settings.default_other_costs,
+      sdlt_override: null,
+      completion_date: null,
+      // The first scenario becomes "our plan" so the property pages have something to show.
+      is_preferred: !existing && d.mortgage_scenarios.length === 0,
+      created_by: this.me,
+      created_at: t,
+      ...existing,
+      ...input,
+      name: input.name.trim() || "Scenario",
+      updated_by: this.me,
+      updated_at: t,
+    };
+    await this.put("mortgage_scenarios", row);
+    return row;
+  }
+
+  async duplicateScenario(id: string): Promise<MortgageScenario | null> {
+    const d = this.state.data;
+    const src = d.mortgage_scenarios.find((x) => x.id === id);
+    if (!src) return null;
+    const copy = await this.saveScenario({ ...src, id: undefined, name: `${src.name} copy`, is_preferred: false, created_at: undefined } as never);
+    const plan = d.overpayment_plans.find((p) => p.scenario_id === id);
+    if (plan) await this.put("overpayment_plans", { ...plan, id: uid(), scenario_id: copy.id });
+    return copy;
+  }
+
+  async deleteScenario(id: string) {
+    const d = this.state.data;
+    for (const p of d.overpayment_plans.filter((x) => x.scenario_id === id)) await this.del("overpayment_plans", p.id);
+    await this.del("mortgage_scenarios", id);
+  }
+
+  /** Star one scenario as "our plan"; it drives the property-page and board figures. */
+  async setPreferredScenario(id: string | null) {
+    const d = this.state.data;
+    // Clear the old star first: the database allows only one per household.
+    for (const sc of d.mortgage_scenarios.filter((x) => x.is_preferred && x.id !== id)) await this.put("mortgage_scenarios", { ...sc, is_preferred: false, updated_at: nowIso(), updated_by: this.me });
+    const next = id ? d.mortgage_scenarios.find((x) => x.id === id) : null;
+    if (next && !next.is_preferred) await this.put("mortgage_scenarios", { ...next, is_preferred: true, updated_at: nowIso(), updated_by: this.me });
+  }
+
+  /** Quick variants: copies of a scenario that vary one input across the values given. */
+  async createVariants(baseId: string, field: VariantField, values: number[]): Promise<MortgageScenario[]> {
+    const d = this.state.data;
+    const base = d.mortgage_scenarios.find((x) => x.id === baseId);
+    if (!base) return [];
+    const room = MAX_SCENARIOS - d.mortgage_scenarios.length;
+    if (values.length > room) throw new Error(`That would make ${values.length} scenarios and there is room for ${room} more. Delete one first.`);
+    const inputs = inputsOf(d, base);
+    const out: MortgageScenario[] = [];
+    for (const v of variantsOf(inputs, field, values)) {
+      out.push(
+        await this.saveScenario({
+          ...base,
+          id: undefined,
+          created_at: undefined,
+          is_preferred: false,
+          name: suggestName(v),
+          price: v.price,
+          property_id: base.property_id,
+          deposit_amount: v.depositAmount,
+          term_months: v.termMonths,
+          initial_rate: v.initialRate,
+          initial_period_months: v.initialPeriodMonths,
+        } as never),
+      );
+    }
+    return out;
+  }
+
+  /** Attach an overpayment plan to a scenario (one per scenario in this version), or clear it with null. */
+  async saveOverpaymentPlan(scenarioId: string, plan: OverpaymentPlan | null) {
+    const cur = this.state.data.overpayment_plans.find((p) => p.scenario_id === scenarioId);
+    if (!plan) return cur ? void (await this.del("overpayment_plans", cur.id)) : undefined;
+    await this.put("overpayment_plans", {
+      id: cur?.id ?? uid(),
+      scenario_id: scenarioId,
+      type: plan.type,
+      amount: plan.type === "annual_percent" ? null : plan.amount,
+      percent: plan.type === "annual_percent" ? plan.percent : null,
+      start_month: plan.startMonth,
+      end_month: plan.endMonth,
+      annual_increase_pct: plan.annualIncreasePct,
+      mode: plan.mode,
+      lump_sum_month: plan.lumpSumMonth,
+    });
+  }
+
+  async saveMortgageSettings(patch: Partial<Omit<MortgageSettings, "id" | "household_id">>) {
+    const cur = mortgageSettings(this.state.data);
+    await this.put("mortgage_settings", { ...DEFAULT_SETTINGS, ...cur, ...patch, id: cur.id || uid(), household_id: this.hid });
   }
 
   // ---- Demo-mode helpers (local adapter only) ----

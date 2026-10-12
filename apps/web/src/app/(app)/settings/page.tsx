@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_CONFIG, totalWeight, type CriterionKey, type ScoringConfig } from "@homehunt/scoring";
+import { MortgageSettingsPanel } from "@/components/mortgage/SettingsPanel";
 import { PageHeader, cx } from "@/components/ui";
 import { activeConfig } from "@/lib/derive";
 import { gbp, splitAddress } from "@/lib/format";
@@ -172,6 +173,8 @@ export default function SettingsPage() {
         </div>
         {!(cfg.tierCutoffs.top > cfg.tierCutoffs.strong && cfg.tierCutoffs.strong > cfg.tierCutoffs.maybe) && <p role="alert" className="m-0 text-sm" style={{ color: "var(--danger)" }}>Each tier needs a higher cut-off than the one below it.</p>}
       </Panel>
+
+      <MortgageSettingsPanel />
 
       <Panel title="Appearance">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Theme">

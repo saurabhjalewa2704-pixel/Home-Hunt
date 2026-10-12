@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { bedsBaths, gateNotes, TIER_COLOR, TIER_LABELS, type Derived } from "@/lib/derive";
 import { fmtDay, fmtTime, gbp, splitAddress } from "@/lib/format";
+import { mortgageSettings, planOnHome } from "@/lib/mortgage";
+import { useStore } from "@/lib/store";
 import { STATUS_LABELS, type Member } from "@/lib/types";
 import type { ScoringConfig } from "@homehunt/scoring";
 import { IPinned, IWarn } from "./icons";
@@ -64,6 +66,10 @@ export function PropertyRow({ d, members, config, delta = 0 }: { d: Derived; mem
   const { street, area } = splitAddress(p.address);
   const tier = d.provisional ? "to_view" : d.tier;
   const struck = d.tier === "ruled_out";
+  // Optional (Settings > Mortgage planner): "about £3,226 a month" on "our plan"'s terms.
+  const store = useStore();
+  const monthly = mortgageSettings(store.data).show_monthly_on_board ? planOnHome(store.data, d.result.effectivePrice) : null;
+  const monthlyText = monthly && !monthly.sim.noMortgage ? `about ${gbp(monthly.sim.payment)} a month` : null;
   return (
     <Link href={`/property/${p.id}`} className="block text-ink no-underline hover:bg-surface-2 focus-visible:bg-surface-2" aria-label={`${street}, ${gbp(p.asking_price)}, score ${Math.round(d.result.combined)}${d.provisional ? " so far" : ""}, ${TIER_LABELS[tier]}`}>
       {/* Phone: compact card */}
@@ -73,6 +79,7 @@ export function PropertyRow({ d, members, config, delta = 0 }: { d: Derived; mem
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className={cx("text-base font-bold", struck && "line-through")}>{d.rank ? `${d.rank}. ` : ""}{street}</span>
             <span className="text-[13px] text-muted">{gbp(p.asking_price)}, {bedsBaths(p)}</span>
+            {monthlyText && <span className="text-[13px] text-muted">{monthlyText}</span>}
           </span>
           <ScoreRing score={d.result.combined} tier={tier} provisional={d.provisional} size={52} label={false} />
         </span>
@@ -91,6 +98,7 @@ export function PropertyRow({ d, members, config, delta = 0 }: { d: Derived; mem
         </span>
         <span className="flex w-[150px] flex-col gap-1">
           <span className="text-xl font-bold">{gbp(p.asking_price)}</span>
+          {monthlyText && <span className="text-[13px] text-muted">{monthlyText}</span>}
           <span className="text-[13px] text-muted">{bedsBaths(p)}</span>
         </span>
         <span className="w-[250px]"><WalkLanes station={d.minutes.station} park={d.minutes.park} shops={d.minutes.supermarket} /></span>

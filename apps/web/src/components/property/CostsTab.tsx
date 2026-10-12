@@ -2,7 +2,9 @@
 import { useState } from "react";
 import { stampDuty } from "@homehunt/scoring";
 import { activeConfig } from "@/lib/derive";
-import { fmtDay, gbp } from "@/lib/format";
+import Link from "next/link";
+import { fmtDay, gbp, gbp2 } from "@/lib/format";
+import { SC_FOOTNOTE, planOnHome } from "@/lib/mortgage";
 import { store } from "@/lib/store";
 import type { Offer } from "@/lib/types";
 import type { Ctx } from "./ctx";
@@ -35,6 +37,8 @@ export function CostsTab({ ctx }: { ctx: Ctx }) {
       </dl>
       <p className="m-0 text-[13px] text-muted">Estimates for planning only, not financial advice. Rates live in configuration so they can be updated.</p>
 
+      <MortgageBlock ctx={ctx} />
+
       <h3 className="m-0 text-lg font-bold">Offers</h3>
       {!offers.length && <p className="m-0 text-muted">No offers yet.</p>}
       {offers.map((o) => (
@@ -56,5 +60,41 @@ export function CostsTab({ ctx }: { ctx: Ctx }) {
       </form>
       <p className="m-0 text-[13px] text-muted">An offer re-scores the budget criterion against the offer price. If the home was ruled out for being over budget, an accepted offer at or under {gbp(config.budget)} brings it back.</p>
     </div>
+  );
+}
+
+/** "Our plan"'s terms applied to this home (mortgage PRD section 2). */
+function MortgageBlock({ ctx }: { ctx: Ctx }) {
+  const { d, data } = ctx;
+  const plan = planOnHome(data, d.result.effectivePrice);
+  if (!plan) {
+    return (
+      <section className="panel flex flex-col gap-2 p-5" aria-label="Mortgage">
+        <h3 className="m-0 text-lg font-bold">Mortgage</h3>
+        <p className="m-0 text-sm text-muted">Star a scenario as <strong>our plan</strong> and every home shows its monthly payment and cash needed on the same terms.</p>
+        <div className="flex flex-wrap gap-2.5"><Link className="btn btn-p" href={`/mortgage?home=${d.property.id}`}>Model this home</Link><Link className="btn" href="/mortgage/scenarios">See scenarios</Link></div>
+      </section>
+    );
+  }
+  const { sim, scenario, inputs } = plan;
+  const dep = inputs.price > 0 ? Math.round((inputs.depositAmount / inputs.price) * 100) : 0;
+  return (
+    <section className="panel flex flex-col gap-3 p-5" aria-label="Mortgage">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="m-0 text-lg font-bold">Mortgage</h3>
+        <span className="text-[13px] text-muted">On our plan: {scenario.name} ({dep}% down, {Math.round(inputs.termMonths / 12)} years, {inputs.initialRate.toFixed(2)}%)</span>
+      </div>
+      {sim.noMortgage ? <p className="m-0 font-semibold">No mortgage needed on these terms.</p> : (
+        <dl className="m-0 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mstat"><dt className="mstat-l">Monthly payment</dt><dd className="mstat-v m-0">{gbp2(sim.payment)}</dd></div>
+          <div className="mstat"><dt className="mstat-l">Cash needed on day one</dt><dd className="mstat-v m-0">{gbp(sim.cashNeeded)}</dd></div>
+          <div className="mstat"><dt className="mstat-l">Total interest</dt><dd className="mstat-v m-0">{gbp(sim.totals.interest)}</dd></div>
+        </dl>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[13px] text-muted">{SC_FOOTNOTE}</span>
+        <Link className="btn" href={`/mortgage?home=${d.property.id}`}>Model this home</Link>
+      </div>
+    </section>
   );
 }

@@ -20,6 +20,8 @@ export interface Adapter {
   onSync(cb: (s: SyncState) => void): () => void;
   /** Replace everything (demo reset, import). */
   replaceAll?(data: Data): Promise<void>;
+  /** Tables the database doesn't have yet (a migration hasn't been run). */
+  missingTables?(): TableName[];
   /** Forget which buyer this device is. */
   signOut?(): Promise<void>;
 }
