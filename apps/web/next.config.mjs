@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
+// Shown in the phone menu so you can tell which build a device is running.
+const buildId = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7);
 const config = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId, NEXT_PUBLIC_BUILD_TIME: new Date().toISOString() },
   transpilePackages: ["@homehunt/scoring", "@homehunt/importers", "@homehunt/geo", "@homehunt/mortgage"],
   poweredByHeader: false,
   // pdfjs-dist can optionally use a native canvas on the server; the browser build never needs it.

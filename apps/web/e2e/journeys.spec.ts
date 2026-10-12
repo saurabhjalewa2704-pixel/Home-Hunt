@@ -642,8 +642,12 @@ test("the mortgage screens fit a phone with no sideways scroll, and the tab bar 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, path).toBeLessThanOrEqual(0);
   }
-  // Settings moved into the profile menu on phones.
-  await page.getByRole("button", { name: "Profile menu" }).click();
-  await page.getByRole("menuitem", { name: "Settings" }).click();
+  // The hamburger menu lists every section, with the version this device is running.
+  await page.getByRole("button", { name: "Open menu" }).click();
+  const menu = page.getByRole("navigation", { name: "Menu" });
+  for (const l of ["Board", "Schedule", "Compare", "Mortgage", "Agents", "Settings"]) await expect(menu.getByRole("link", { name: l })).toBeVisible();
+  await expect(menu.getByText(/^Version /)).toBeVisible();
+  await menu.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Menu" })).toHaveCount(0); // closes on navigation
 });

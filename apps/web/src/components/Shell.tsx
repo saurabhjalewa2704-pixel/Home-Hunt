@@ -21,30 +21,42 @@ function isOn(path: string, href: string) {
   return href === "/" ? path === "/" || path.startsWith("/property") : path.startsWith(href);
 }
 
-/** Phones: Settings and Agents live in the profile menu so the tab bar can carry Mortgage. */
+/** The build this device is running, so a stale copy is easy to spot. */
+const BUILD = `${process.env.NEXT_PUBLIC_BUILD_ID ?? "local"}${process.env.NEXT_PUBLIC_BUILD_TIME ? `, ${process.env.NEXT_PUBLIC_BUILD_TIME.slice(0, 16).replace("T", " ")} UTC` : ""}`;
+
+/** Phones: a slim top bar with a menu that lists every section, so nothing depends on the tab bar having room. */
 function PhoneBar({ path }: { path: string }) {
   const s = useStore();
   const [open, setOpen] = useState(false);
   const me = s.data.members.find((m) => m.id === s.me);
   useEffect(() => setOpen(false), [path]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
-    <header data-phonebar className="sticky top-0 z-30 flex min-h-12 items-center justify-between gap-3 border-b border-line bg-bg px-4 md:hidden">
-      <Link href="/" className="flex items-center gap-2 text-ink no-underline"><ILogo /><span className="text-[17px] font-extrabold tracking-[-0.02em]">HomeHunt</span></Link>
-      <div className="relative">
-        <button className="flex min-h-11 items-center gap-2 rounded-full pl-1 pr-3 text-sm font-semibold" aria-expanded={open} aria-haspopup="menu" aria-label="Profile menu" onClick={() => setOpen((v) => !v)}>
-          <Avatar member={me} size={28} />{me?.display_name}
+    <>
+      <header data-phonebar className="sticky top-0 z-40 flex min-h-12 items-center justify-between gap-3 border-b border-line bg-bg px-4 md:hidden">
+        <Link href="/" className="flex items-center gap-2 text-ink no-underline"><ILogo /><span className="text-[17px] font-extrabold tracking-[-0.02em]">HomeHunt</span></Link>
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg" aria-label={open ? "Close menu" : "Open menu"} aria-expanded={open} aria-controls="phone-menu" onClick={() => setOpen((v) => !v)}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>{open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}</svg>
         </button>
-        {open && (
-          <div role="menu" className="panel absolute top-12 right-0 z-40 flex w-56 flex-col gap-0.5 p-2 shadow-lg">
-            <Link role="menuitem" href="/settings" className="nav"><ISettings />Settings</Link>
-            <Link role="menuitem" href="/agents" className="nav"><IAgents />Agents</Link>
-            <div className="my-1 border-t border-line-2" />
-            <div className="px-3 py-1.5"><SyncBadge /></div>
-            <button role="menuitem" className="nav w-full text-left" onClick={() => void store.signOut()}>Switch person</button>
+      </header>
+      {open && (
+        <nav id="phone-menu" aria-label="Menu" data-phonebar className="fixed inset-x-0 top-12 bottom-0 z-30 flex flex-col gap-1 overflow-auto bg-bg p-4 md:hidden">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href} className={cx("nav !min-h-12 !text-base", isOn(path, n.href) && "nav-on")} aria-current={isOn(path, n.href) ? "page" : undefined}><n.icon />{n.label}</Link>
+          ))}
+          <div className="mt-3 flex flex-col gap-3 border-t border-line px-3 pt-4">
+            <div className="flex items-center gap-2.5"><Avatar member={me} size={30} /><span className="text-[15px] text-ink-2">{me?.display_name}</span><button className="ml-auto min-h-11 text-sm text-muted underline" onClick={() => void store.signOut()}>Switch person</button></div>
+            <SyncBadge />
+            <span className="text-xs text-muted">Version {BUILD}</span>
           </div>
-        )}
-      </div>
-    </header>
+        </nav>
+      )}
+    </>
   );
 }
 
@@ -72,7 +84,13 @@ export function Shell({ children }: { children: ReactNode }) {
     void store.start();
   }, []);
   useEffect(() => {
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
+      // When a newer version of the app takes over, load it once so an open app never keeps running old code.
+      const had = !!navigator.serviceWorker.controller;
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !reloaded) { reloaded = true; window.location.reload(); } });
+      navigator.serviceWorker.register("/sw.js").then((r) => void r.update()).catch(() => {});
+    }
   }, []);
 
   if (s.status === "loading") {

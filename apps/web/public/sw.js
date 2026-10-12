@@ -1,8 +1,9 @@
 /* HomeHunt service worker: app shell + visited pages work offline (PRD 10, Offline).
    API calls and anything signed-in data related are never cached here: app data
    lives in IndexedDB / localStorage, and listing import needs a connection anyway. */
-const VERSION = "hh-v1";
-const SHELL = ["/", "/schedule", "/add", "/compare", "/settings", "/icon.svg", "/manifest.webmanifest"];
+// Bump this, or deploy a new build, and the old caches are deleted on the next visit.
+const VERSION = "hh-v2";
+const SHELL = ["/", "/schedule", "/add", "/compare", "/mortgage", "/settings", "/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL).catch(() => {})).then(() => self.skipWaiting()));
