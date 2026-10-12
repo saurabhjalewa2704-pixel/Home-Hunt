@@ -544,3 +544,106 @@ test("settings: the overpayment allowance and defaults feed new calculators", as
   await expect(page.getByLabel("Years", { exact: true })).toHaveValue("25");
   await expect(page.getByLabel("Arrangement fee", { exact: true })).toHaveValue("1499");
 });
+
+test("overpayments: the PRD's golden figures on scenario B, presets, and lower-the-payment", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage/overpayments");
+  const head = page.getByTestId("op-headline");
+  const vis = (t: string | RegExp) => page.getByText(t, { exact: typeof t === "string" }).locator("visible=true").first();
+
+  // £10,000 a year on B (£590,750 at 5.15% over 30 years).
+  await expect(head).toHaveText("Overpaying £10,000 a year clears the mortgage 10 years 8 months early and saves £224,962 in interest.");
+  await expect(vis("19 years 4 months")).toBeVisible();
+  const vs = page.getByRole("table").filter({ hasText: "Original term against overpaying" });
+  const total = vs.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Total payable", exact: true }) });
+  await expect(total).toContainText("£1,161,234");
+  await expect(total).toContainText("£936,272");
+  await expect(total).toContainText("£224,962");
+  await expect(vs.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Overpayments" }) })).toContainText("£190,000");
+  await expect(vs.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Regular monthly payments in total" }) })).toContainText("£746,272");
+  await expect(page.getByText("Each £1 overpaid saves about £1.18")).toBeVisible();
+
+  // Presets.
+  await page.getByRole("button", { name: "£5,000 a year" }).click();
+  await expect(vis("23 years 4 months")).toBeVisible(); // 280 months, so 6 years 8 months early
+  await expect(head).toContainText("£143,092");
+  await page.getByRole("button", { name: "5% a year", exact: true }).click();
+  await expect(head).toContainText("saves £330,055 in interest");
+  await expect(vis("15 years 3 months")).toBeVisible();
+  await page.getByRole("button", { name: "£10,000 a year" }).click();
+  await page.getByLabel("Or type an amount").fill("20000");
+  await expect(head).toContainText("£317,128");
+  await page.getByLabel("Or type an amount").fill("10000");
+
+  // Lower the payment instead: £3,170.25 after the first overpayment, £130,828 saved.
+  await page.getByRole("button", { name: "Pay less each month" }).click();
+  await expect(head).toHaveText("Overpaying £10,000 a year lowers your payment to £3,170.25 a month after the first overpayment and saves £130,828 in interest.");
+
+  // Compare both outcomes side by side.
+  await page.getByRole("button", { name: "Compare both" }).click();
+  const both = page.getByRole("region", { name: "Both outcomes side by side" });
+  await expect(both).toContainText("£224,962");
+  await expect(both).toContainText("£130,828");
+});
+
+test("overpayments: the allowance warning during the fix, and none after it", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage/overpayments");
+  await page.getByLabel("Or type an amount").fill("70000");
+  const alert = page.getByRole("alert").filter({ hasText: "allowance" });
+  await expect(alert).toContainText("In year 1 you'd overpay £10,925 more than the 10% allowance of £59,075.");
+  await expect(alert).toContainText("Your lender may charge an early repayment charge on that amount");
+  await expect(page.locator("tr.mrow-warn").first()).toContainText("£70,000");
+  // The same overpayment only after the fix ends is fine.
+  await page.getByRole("button", { name: "After the fix ends" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "allowance" })).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /^6 / }).getByText("No limit")).toBeVisible();
+});
+
+test("overpayments: a lump sum and a monthly amount; save the plan to a scenario and see it in Scenarios", async ({ page }) => {
+  await openAs(page, "m-saurabh", "/mortgage/overpayments");
+  const head = page.getByTestId("op-headline");
+  await page.getByRole("button", { name: "A one-off lump sum" }).click();
+  await page.getByLabel("Or type an amount").fill("30000");
+  await expect(head).toContainText("a one-off £30,000");
+  await page.getByRole("button", { name: "A fixed amount each month" }).click();
+  await page.getByLabel("Or type an amount").fill("500");
+  await expect(head).toContainText("£500 a month");
+  await page.getByRole("button", { name: "A fixed amount each year" }).click();
+  await page.getByRole("button", { name: "£10,000 a year" }).click();
+
+  await page.getByRole("button", { name: "Save to scenario B" }).click();
+  await expect(page.getByRole("button", { name: "Saved to scenario B" })).toBeDisabled();
+  await page.goto("/mortgage/scenarios");
+  await expect(page.locator(".mcard").filter({ hasText: "B. Our plan" })).toContainText("Overpaying saves £224,962");
+  const table = page.getByRole("region", { name: "Side-by-side comparison" });
+  await expect(table.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "With overpayments: interest saved" }) })).toContainText("£224,962");
+});
+
+test("the calculator hands a new scenario to the simulator", async ({ page }) => {
+  await openAs(page, "m-vedika", "/mortgage", { sample: false });
+  await page.getByRole("button", { name: "Save and try overpaying" }).click();
+  await expect(page).toHaveURL(/\/mortgage\/overpayments\?scenario=/);
+  await expect(page.getByLabel("Mortgage", { exact: true })).toContainText("A. 15% down, 30 yrs, 5.15%");
+  await expect(page.getByTestId("op-headline")).toContainText("saves £224,962 in interest");
+});
+
+test("with no scenario the simulator asks you to save one first", async ({ page }) => {
+  await openAs(page, "m-vedika", "/mortgage/overpayments", { sample: false });
+  await expect(page.getByText("Save a scenario first")).toBeVisible();
+});
+
+test("the mortgage screens fit a phone with no sideways scroll, and the tab bar carries Mortgage @phone", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "phone layout only");
+  await openAs(page, "m-saurabh", "/mortgage");
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Mortgage" })).toBeVisible();
+  for (const path of ["/mortgage", "/mortgage/scenarios", "/mortgage/overpayments"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "Mortgage", level: 1 })).toBeVisible();
+    await page.waitForTimeout(300);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, path).toBeLessThanOrEqual(0);
+  }
+  // Settings moved into the profile menu on phones.
+  await page.getByRole("button", { name: "Profile menu" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+});

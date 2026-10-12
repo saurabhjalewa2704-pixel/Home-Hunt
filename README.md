@@ -18,6 +18,7 @@ With no environment variables it runs in **local mode**: data lives in that one 
 | PRD area | Where |
 | --- | --- |
 | Scoring, tiers, ranking, stamp duty (§6, §7, FR-S, FR-X1) | `packages/scoring`: pure functions, config-driven, golden test for the §6.7 worked example (75.5, 69.8, combined 72.6) |
+| Mortgage planner (mortgage PRD) | `packages/mortgage`: a pure month-by-month engine (initial and follow-on rate, four overpayment types, shorten-the-term or lower-the-payment, allowance and ERC check, LTV bands, scenario comparison), tested against every golden figure in the PRD. Screens under `/mortgage`: Calculator, Scenarios (compare up to 6, quick variants, our plan) and Overpayments. Scenarios and settings are shared by both of you (`0002_mortgage.sql`); our plan shows on each home's Costs tab, optionally on the board, and as a row on Compare |
 | PDF import | On the same page, **Upload a PDF** (an agent's brochure, or a listing page saved as PDF). The browser draws the first five pages and the last one as pictures and pulls out the printed text, then both go through the screenshot reader |
 | Agent contact | Each agent has a mobile, office phone and email. Call and Text open the phone's dialler and messages (mobile first), Email opens the mail app. Agent details read from a listing or PDF are pre-filled on the Add page for checking |
 | Screenshot import | `/api/extract-screenshots` + the Add page: paste or drop up to 6 listing screenshots; Claude (official SDK, structured output) reads the facts and finds the main photo, which is cropped out as the home's picture |
@@ -53,12 +54,20 @@ This needs `ANTHROPIC_API_KEY` set on the server (Vercel). Without it you'll be 
 ## Tests
 
 ```bash
-npm test             # 80 unit tests: scoring (every curve breakpoint, gates, caps, ties), importers (fixtures), geo
+npm test             # unit tests: scoring (every curve breakpoint, gates, caps, ties), importers (fixtures), geo, the mortgage engine's golden figures, screenshot reading, calculator logic
 npm run typecheck
-npm run build && npm run e2e   # 15 browser journeys, laptop and phone
+npm run build && npm run e2e   # browser journeys, laptop and phone
 ```
 
 ## Decisions and deviations to know about
+
+- **Mortgage tables need a second migration.** If you already ran `0001_init.sql`, also run `supabase/migrations/0002_mortgage.sql` once (safe to repeat). Until you do, the app still opens and the calculator works; saving a scenario shows a banner telling you to run it.
+- **The mortgage PRD contradicts itself in one place.** Section 10 says scenario C is lowest on monthly payment, total interest and total payable. By its own table (and by the engine) C is lowest on payment and total payable, but D (15% down over 25 years) has the lowest total interest: £460,837 against C's £468,964. The app follows the numbers, so D is marked best on interest.
+- **Calculator opens with a rate filled in** (the sample rate for 85% LTV, 5.15%) rather than blank, as in the mock-up; the PRD says blank. Rates are examples you can change in Settings, never quotes.
+- **The first scenario you save becomes "our plan"** so the property pages have something to show; star another any time.
+- **Scenario colours** keep the mock-ups' hues but are nudged so they stay distinguishable for colour-blind readers; every chart mark also carries its letter.
+- **Lower the payment** re-sets the payment to keep the original term after each overpayment, but the yearly overpayments carry on, so the loan can still finish early (£10,000 a year clears scenario B in 29 years; the PRD's £130,828 saving is exactly this).
+- **Phones**: the tab bar carries Mortgage in place of Settings; Settings and Agents are in the profile menu at the top right.
 
 - **Lifecycle** (the PRD's diagram wasn't readable in the export): Shortlisted, Viewing booked, Viewed, Second viewing, Offer made, Offer accepted are active; Ruled out, Withdrawn, Sold are exits.
 - **Budget gate** follows the figure in play: an accepted offer, else the live offer, else the asking price ("Offers over" is gated on the asking price). The PRD wording ("asking price or latest offer") would rule out a home you are negotiating below the limit.
@@ -72,6 +81,10 @@ npm run build && npm run e2e   # 15 browser journeys, laptop and phone
 - Photos you take are resized in the browser; in demo mode they stay in IndexedDB.
 
 ## Not verified, not built
+
+- **The mortgage maths is verified against the PRD's own figures, not against a lender.** Interest is monthly at annual rate ÷ 12, as the PRD specifies; real statements use daily interest and will differ slightly. Overpayments are applied at each anniversary, with no delay in recalculating the payment.
+- **The mortgage Supabase tables (`0002_mortgage.sql`) have never run against a live project**, like the rest of the Supabase path. Local mode is what the browser tests exercise.
+- Not built from the mortgage PRD: Settings' separate "show monthly cost on board" is built, but the affordability check takes income from the calculator or Settings only (no per-scenario income), and overpayment plans are one per scenario in this version.
 
 - **Supabase path is untested against a live project** (no credentials here): the adapter, SQL policies, storage and live sync are written and typechecked but have never run. Local mode, the API routes, scoring and the UI are what the tests exercise. Run the SQL on a scratch project and try it from two devices before relying on it.
 - **Portal parsers use synthetic fixtures.** I couldn't capture real Rightmove/Zoopla/OnTheMarket pages, so the adapters follow the data shapes I expect. Save a real page for each portal into `packages/importers/test/fixtures/` and fix any field that doesn't parse; the paste-text and manual fallbacks cover you meanwhile.
