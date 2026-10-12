@@ -10,7 +10,7 @@
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "test": "vitest run",
-    "typecheck": "tsc -p apps/web --noEmit && tsc -p packages/scoring --noEmit && tsc -p packages/importers --noEmit && tsc -p packages/geo --noEmit",
+    "typecheck": "tsc -p apps/web --noEmit && tsc -p packages/scoring --noEmit && tsc -p packages/importers --noEmit && tsc -p packages/geo --noEmit && tsc -p packages/mortgage --noEmit",
     "e2e": "npm run e2e -w apps/web"
   },
   "devDependencies": {
